@@ -43,6 +43,7 @@ body {
 .nav-links {
   display: flex;
   gap: 2rem;
+  align-items: center;
 }
 
 .nav-links a {
@@ -53,6 +54,48 @@ body {
 
 .nav-links a:hover {
   color: #3498db;
+}
+
+.user-info {
+  color: #ecf0f1;
+  font-size: 0.9rem;
+}
+
+.logout-btn {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.3s;
+}
+
+.logout-btn:hover {
+  background-color: #c0392b;
+}
+
+.register-btn {
+  background-color: #3498db;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+}
+
+.register-btn:hover {
+  background-color: #2980b9;
+  color: white !important;
+}
+
+.admin-link {
+  background-color: #e74c3c;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+}
+
+.admin-link:hover {
+  background-color: #c0392b;
+  color: white !important;
 }
 
 /* Main Content */
