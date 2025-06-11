@@ -1,16 +1,12 @@
 package com.example.jobportal.model;
 
-import java.time.LocalDateTime;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
 
 @Entity
 @Data
@@ -45,4 +41,35 @@ public class Job {
     private LocalDateTime postedDate = LocalDateTime.now();
     
     private boolean active = true;
+    
+    // New fields for approval system
+    @Enumerated(EnumType.STRING)
+    private ApprovalStatus approvalStatus = ApprovalStatus.PENDING;
+    
+    private LocalDateTime approvedDate;
+    
+    private String rejectionReason;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "posted_by")
+    @JsonIgnore
+    private User postedBy;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approved_by")
+    @JsonIgnore
+    private User approvedBy;
+    
+    // Add this method to get employer info without circular reference
+    public String getPostedByUsername() {
+        return postedBy != null ? postedBy.getUsername() : null;
+    }
+    
+    public String getPostedByCompany() {
+        return postedBy != null ? postedBy.getCompanyName() : company;
+    }
+    
+    public Long getPostedById() {
+        return postedBy != null ? postedBy.getId() : null;
+    }
 }
