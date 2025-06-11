@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
+import { axiosInstance } from '../services/authService';
 import './JobList.css';
 
 const JobList = () => {
@@ -16,7 +16,7 @@ const JobList = () => {
 
   const fetchJobs = async () => {
     try {
-      const response = await axios.get('http://localhost:8080/api/jobs');
+      const response = await axiosInstance.get('/jobs');
       setJobs(response.data);
       setLoading(false);
     } catch (error) {
@@ -29,7 +29,7 @@ const JobList = () => {
     setLoading(true);
     try {
       if (searchTerm) {
-        const response = await axios.get(`http://localhost:8080/api/jobs/search?query=${searchTerm}`);
+        const response = await axiosInstance.get(`/jobs/search?query=${searchTerm}`);
         setJobs(response.data);
       } else {
         fetchJobs();
@@ -47,7 +47,7 @@ const JobList = () => {
       if (locationFilter) params.append('location', locationFilter);
       if (jobTypeFilter) params.append('jobType', jobTypeFilter);
       
-      const response = await axios.get(`http://localhost:8080/api/jobs/filter?${params}`);
+      const response = await axiosInstance.get(`/jobs/filter?${params}`);
       setJobs(response.data);
     } catch (error) {
       console.error('Error filtering jobs:', error);
