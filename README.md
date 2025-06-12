@@ -362,6 +362,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📧 Contact
 
-Your Name - [@yourusername](https://twitter.com/yourusername) - email@example.com
+Your Name - [@angusmit](https://github.com/angusmit) - angusnshtest@gmail.com
 
-Project Link: [https://github.com/yourusername/job-portal](https://github.com/yourusername/job-portal)
+Project Link: [https://github.com/angusmit/job-portal](https://github.com/yourusername/job-portal)
