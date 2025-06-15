@@ -1,10 +1,11 @@
-import React from 'react';
+// frontend/src/components/Header.js
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import './Header.css';
 
 const Header = () => {
+  const { user, logout, isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const { user, logout, isAuthenticated, isEmployer, isAdmin } = useAuth();
 
   const handleLogout = () => {
     logout();
@@ -13,39 +14,62 @@ const Header = () => {
 
   return (
     <header className="header">
-      <div className="header-content">
+      <div className="header-container">
         <Link to="/" className="logo">
           JobPortal
         </Link>
-        <nav className="nav-links">
-          <Link to="/">Browse Jobs</Link>
-          
+
+        <nav className="nav-menu">
+          <Link to="/" className="nav-link">
+            Browse Jobs
+          </Link>
+
           {isAuthenticated ? (
             <>
-              {isAdmin && (
-                <Link to="/admin" className="admin-link">
+              {user.role === 'EMPLOYER' && (
+                <>
+                  <Link to="/post-job" className="nav-link">
+                    Post Job
+                  </Link>
+                  <Link to="/my-jobs" className="nav-link">
+                    My Jobs
+                  </Link>
+                </>
+              )}
+
+              {user.role === 'JOB_SEEKER' && (
+                <Link to="/saved-jobs" className="nav-link">
+                  Saved Jobs
+                </Link>
+              )}
+
+              {user.role === 'ADMIN' && (
+                <Link to="/admin" className="nav-link admin-link">
                   Admin Dashboard
                 </Link>
               )}
-              {isEmployer && (
-                <>
-                  <Link to="/post-job">Post a Job</Link>
-                  <Link to="/my-jobs">My Jobs</Link>
-                </>
-              )}
-              <Link to="/profile">Profile</Link>
-              <span className="user-info">Welcome, {user.username}!</span>
-              <button onClick={handleLogout} className="logout-btn">
-                Logout
-              </button>
+
+              <div className="user-info">
+                <span className="welcome-text">
+                  Welcome, {user.firstName || user.username}!
+                </span>
+                <span className="user-role">
+                  ({user.role.replace('_', ' ')})
+                </span>
+                <button onClick={handleLogout} className="logout-btn">
+                  Logout
+                </button>
+              </div>
             </>
           ) : (
-            <>
-              <Link to="/login">Login</Link>
-              <Link to="/register" className="register-btn">
+            <div className="auth-links">
+              <Link to="/login" className="nav-link">
+                Login
+              </Link>
+              <Link to="/register" className="nav-link register-btn">
                 Register
               </Link>
-            </>
+            </div>
           )}
         </nav>
       </div>
