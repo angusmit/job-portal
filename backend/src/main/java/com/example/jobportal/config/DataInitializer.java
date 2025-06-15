@@ -1,134 +1,155 @@
 package com.example.jobportal.config;
 
+import java.time.LocalDateTime;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import com.example.jobportal.model.ApprovalStatus;
 import com.example.jobportal.model.Job;
 import com.example.jobportal.model.User;
 import com.example.jobportal.model.UserRole;
-import com.example.jobportal.model.ApprovalStatus;
 import com.example.jobportal.repository.JobRepository;
 import com.example.jobportal.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
+@Configuration
+public class DataInitializer {
 
-@Component
-public class DataInitializer implements CommandLineRunner {
-
-    @Autowired
-    private JobRepository jobRepository;
-    
-    @Autowired
-    private UserRepository userRepository;
-    
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    @Override
-    public void run(String... args) throws Exception {
-        // Create sample users
-        User admin = createUser("admin", "admin@jobportal.com", "admin123", 
-                              UserRole.ADMIN, "Admin", "User");
-        
-        User employer1 = createUser("techcorp", "hr@techcorp.com", "password123", 
-                                  UserRole.EMPLOYER, "John", "Smith");
-        employer1.setCompanyName("Tech Corp");
-        employer1.setCompanyDescription("Leading technology company");
-        employer1.setCompanyWebsite("https://techcorp.com");
-        userRepository.save(employer1);
-        
-        User employer2 = createUser("webinc", "hr@webinc.com", "password123", 
-                                  UserRole.EMPLOYER, "Jane", "Doe");
-        employer2.setCompanyName("Web Solutions Inc");
-        employer2.setCompanyDescription("Web development experts");
-        userRepository.save(employer2);
-        
-        User jobSeeker1 = createUser("johndoe", "john@example.com", "password123", 
-                                   UserRole.JOB_SEEKER, "John", "Doe");
-        jobSeeker1.setResumeSummary("Experienced software developer");
-        jobSeeker1.setSkills("Java, Spring Boot, React");
-        userRepository.save(jobSeeker1);
-        
-        User jobSeeker2 = createUser("janesmith", "jane@example.com", "password123", 
-                                   UserRole.JOB_SEEKER, "Jane", "Smith");
-        jobSeeker2.setResumeSummary("Frontend developer with 5 years experience");
-        jobSeeker2.setSkills("React, TypeScript, CSS");
-        userRepository.save(jobSeeker2);
-        
-        // Create sample jobs with employers
-        createSampleJob("Software Engineer", employer1, "San Francisco, CA", 
-            "We are looking for a talented Software Engineer to join our team...",
-            "Full-time", "$120,000 - $150,000",
-            "3+ years experience, Java, Spring Boot, React");
+    @Bean
+    CommandLineRunner initDatabase(UserRepository userRepository, JobRepository jobRepository) {
+        return args -> {
+            // Create Admin user
+            User admin = new User();
+            admin.setUsername("admin");
+            admin.setEmail("admin@jobportal.com");
+            admin.setPassword(passwordEncoder.encode("admin123"));
+            admin.setRole(UserRole.ADMIN);
+            admin.setFirstName("Admin");
+            admin.setLastName("User");
+            admin.setActive(true);
+            userRepository.save(admin);
 
-        createSampleJob("Frontend Developer", employer2, "New York, NY", 
-            "Seeking a creative Frontend Developer with strong React skills...",
-            "Full-time", "$100,000 - $130,000",
-            "2+ years experience, React, TypeScript, CSS");
+            // Create Employer users
+            User employer1 = new User();
+            employer1.setUsername("techcorp");
+            employer1.setEmail("hr@techcorp.com");
+            employer1.setPassword(passwordEncoder.encode("password123"));
+            employer1.setRole(UserRole.EMPLOYER);
+            employer1.setFirstName("Tech");
+            employer1.setLastName("Corp");
+            employer1.setCompanyName("TechCorp Solutions");
+            employer1.setCompanyDescription("Leading technology solutions provider");
+            employer1.setCompanyWebsite("https://techcorp.com");
+            employer1.setActive(true);
+            userRepository.save(employer1);
 
-        createSampleJob("Data Scientist", employer1, "Seattle, WA", 
-            "Join our data science team to work on cutting-edge ML projects...",
-            "Full-time", "$130,000 - $160,000",
-            "Python, Machine Learning, SQL, Statistics");
+            User employer2 = new User();
+            employer2.setUsername("webinc");
+            employer2.setEmail("hr@webinc.com");
+            employer2.setPassword(passwordEncoder.encode("password123"));
+            employer2.setRole(UserRole.EMPLOYER);
+            employer2.setFirstName("Web");
+            employer2.setLastName("Inc");
+            employer2.setCompanyName("Web Inc");
+            employer2.setCompanyDescription("Web development specialists");
+            employer2.setActive(true);
+            userRepository.save(employer2);
 
-        createSampleJob("UX Designer", employer2, "Los Angeles, CA", 
-            "Looking for a UX Designer to create amazing user experiences...",
-            "Contract", "$80/hour",
-            "Portfolio required, Figma, User Research");
+            // Create Job Seeker users
+            User jobSeeker1 = new User();
+            jobSeeker1.setUsername("johndoe");
+            jobSeeker1.setEmail("john@example.com");
+            jobSeeker1.setPassword(passwordEncoder.encode("password123"));
+            jobSeeker1.setRole(UserRole.JOB_SEEKER);
+            jobSeeker1.setFirstName("John");
+            jobSeeker1.setLastName("Doe");
+            jobSeeker1.setSkills("Java, Spring Boot, React");
+            jobSeeker1.setExperience("5 years");
+            jobSeeker1.setActive(true);
+            userRepository.save(jobSeeker1);
 
-        createSampleJob("DevOps Engineer", employer1, "Austin, TX", 
-            "Help us build and maintain our cloud infrastructure...",
-            "Full-time", "$110,000 - $140,000",
-            "AWS, Docker, Kubernetes, CI/CD");
+            User jobSeeker2 = new User();
+            jobSeeker2.setUsername("janesmith");
+            jobSeeker2.setEmail("jane@example.com");
+            jobSeeker2.setPassword(passwordEncoder.encode("password123"));
+            jobSeeker2.setRole(UserRole.JOB_SEEKER);
+            jobSeeker2.setFirstName("Jane");
+            jobSeeker2.setLastName("Smith");
+            jobSeeker2.setSkills("Python, Django, JavaScript");
+            jobSeeker2.setExperience("3 years");
+            jobSeeker2.setActive(true);
+            userRepository.save(jobSeeker2);
 
-        createSampleJob("Marketing Intern", employer2, "Boston, MA", 
-            "Great opportunity for students to gain marketing experience...",
-            "Internship", "$20/hour",
-            "Currently enrolled in college, Social Media savvy");
+            // Create sample jobs (mix of approved and pending)
+            Job job1 = new Job();
+            job1.setTitle("Senior Java Developer");
+            job1.setCompany("TechCorp Solutions");
+            job1.setLocation("New York, NY");
+            job1.setDescription("We are looking for an experienced Java developer to join our team...");
+            job1.setJobType("Full-time");
+            job1.setSalary("$120,000 - $150,000");
+            job1.setRequirements("5+ years Java experience, Spring Boot, Microservices");
+            job1.setPostedBy(employer1);
+            job1.setPostedDate(LocalDateTime.now());
+            job1.setActive(true);
+            job1.setApprovalStatus(ApprovalStatus.APPROVED);
+            job1.setApprovedBy(admin);
+            job1.setApprovedDate(LocalDateTime.now());
+            jobRepository.save(job1);
 
-        System.out.println("Sample data created successfully!");
-        System.out.println("Created users:");
-        System.out.println("- Admin: admin/admin123");
-        System.out.println("- Employers: techcorp/password123, webinc/password123");
-        System.out.println("- Job Seekers: johndoe/password123, janesmith/password123");
-    }
-    
-    private User createUser(String username, String email, String password, 
-                          UserRole role, String firstName, String lastName) {
-        User user = new User();
-        user.setUsername(username);
-        user.setEmail(email);
-        user.setPassword(passwordEncoder.encode(password));
-        user.setRole(role);
-        user.setFirstName(firstName);
-        user.setLastName(lastName);
-        user.setActive(true);
-        return userRepository.save(user);
-    }
+            Job job2 = new Job();
+            job2.setTitle("Frontend Developer");
+            job2.setCompany("Web Inc");
+            job2.setLocation("San Francisco, CA");
+            job2.setDescription("Looking for a talented frontend developer with React expertise...");
+            job2.setJobType("Full-time");
+            job2.setSalary("$100,000 - $130,000");
+            job2.setRequirements("3+ years React, TypeScript, CSS");
+            job2.setPostedBy(employer2);
+            job2.setPostedDate(LocalDateTime.now());
+            job2.setActive(true);
+            job2.setApprovalStatus(ApprovalStatus.APPROVED);
+            job2.setApprovedBy(admin);
+            job2.setApprovedDate(LocalDateTime.now());
+            jobRepository.save(job2);
 
-    private void createSampleJob(String title, User employer, String location, 
-                                String description, String jobType, String salary, 
-                                String requirements) {
-        Job job = new Job();
-        job.setTitle(title);
-        job.setCompany(employer.getCompanyName());
-        job.setLocation(location);
-        job.setDescription(description);
-        job.setJobType(jobType);
-        job.setSalary(salary);
-        job.setRequirements(requirements);
-        job.setPostedBy(employer);
-        
-        // Auto-approve first 3 jobs for demo purposes
-        if (jobRepository.count() < 3) {
-            job.setApprovalStatus(ApprovalStatus.APPROVED);
-            job.setApprovedDate(LocalDateTime.now());
-            job.setApprovedBy(userRepository.findByUsername("admin").orElse(null));
-        } else {
-            job.setApprovalStatus(ApprovalStatus.PENDING);
-        }
-        
-        jobRepository.save(job);
+            Job job3 = new Job();
+            job3.setTitle("Python Developer");
+            job3.setCompany("TechCorp Solutions");
+            job3.setLocation("Remote");
+            job3.setDescription("Remote Python developer position for our data team...");
+            job3.setJobType("Full-time");
+            job3.setSalary("$110,000 - $140,000");
+            job3.setRequirements("Python, Django, PostgreSQL, AWS");
+            job3.setPostedBy(employer1);
+            job3.setPostedDate(LocalDateTime.now());
+            job3.setActive(true);
+            job3.setApprovalStatus(ApprovalStatus.PENDING);
+            jobRepository.save(job3);
+
+            Job job4 = new Job();
+            job4.setTitle("DevOps Engineer");
+            job4.setCompany("Web Inc");
+            job4.setLocation("Austin, TX");
+            job4.setDescription("Seeking a DevOps engineer to manage our cloud infrastructure...");
+            job4.setJobType("Contract");
+            job4.setSalary("$130,000 - $160,000");
+            job4.setRequirements("Kubernetes, AWS, CI/CD, Terraform");
+            job4.setPostedBy(employer2);
+            job4.setPostedDate(LocalDateTime.now());
+            job4.setActive(true);
+            job4.setApprovalStatus(ApprovalStatus.PENDING);
+            jobRepository.save(job4);
+
+            System.out.println("Sample data initialized successfully!");
+            System.out.println("Created users: admin, techcorp, webinc, johndoe, janesmith");
+            System.out.println("Created jobs: 2 approved, 2 pending approval");
+        };
     }
 }

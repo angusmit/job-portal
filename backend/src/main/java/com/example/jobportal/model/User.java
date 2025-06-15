@@ -1,44 +1,56 @@
 package com.example.jobportal.model;
 
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-
-import jakarta.persistence.*;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
+
 @Entity
+@Table(name = "users", 
+       uniqueConstraints = {
+           @UniqueConstraint(columnNames = "username"),
+           @UniqueConstraint(columnNames = "email")
+       })
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Table(name = "users")
+@EqualsAndHashCode(exclude = {"savedJobs", "postedJobs"})
+@ToString(exclude = {"savedJobs", "postedJobs", "password"})
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     
-    @NotBlank
-    @Size(min = 3, max = 50)
-    @Column(unique = true)
+    @Column(nullable = false, unique = true)
     private String username;
     
-    @NotBlank
-    @Email
-    @Column(unique = true)
+    @Column(nullable = false, unique = true)
     private String email;
     
-    @NotBlank
-    @Size(min = 6)
+    @Column(nullable = false)
     @JsonIgnore
     private String password;
     
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private UserRole role;
     
     private String firstName;
@@ -46,7 +58,6 @@ public class User {
     private String phoneNumber;
     
     // Job Seeker specific fields
-    @Column(length = 2000)
     private String resumeSummary;
     private String skills;
     private String experience;
@@ -54,21 +65,41 @@ public class User {
     
     // Employer specific fields
     private String companyName;
+    @Column(columnDefinition = "TEXT")
     private String companyDescription;
     private String companyWebsite;
-    private String companySize;
     
-    private LocalDateTime createdAt = LocalDateTime.now();
+    // Account status
+    @Column(nullable = false)
     private boolean active = true;
     
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(name = "saved_jobs",
-            joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "job_id"))
+    // Timestamps
+    @Column(nullable = false)
+    private LocalDateTime createdAt = LocalDateTime.now();
+    
+    private LocalDateTime lastLogin;
+    
+    // Job relationships
+    @ManyToMany
+    @JoinTable(
+        name = "user_saved_jobs",
+        joinColumns = @JoinColumn(name = "user_id"),
+        inverseJoinColumns = @JoinColumn(name = "job_id")
+    )
     @JsonIgnore
     private Set<Job> savedJobs = new HashSet<>();
     
     @OneToMany(mappedBy = "postedBy", cascade = CascadeType.ALL)
     @JsonIgnore
     private Set<Job> postedJobs = new HashSet<>();
+    
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        if (!active) {
+            active = true;
+        }
+    }
 }

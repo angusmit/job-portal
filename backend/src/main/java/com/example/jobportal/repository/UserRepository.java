@@ -1,12 +1,13 @@
 package com.example.jobportal.repository;
 
-import com.example.jobportal.model.User;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
+import com.example.jobportal.model.User;
+import com.example.jobportal.model.UserRole;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
@@ -18,6 +19,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
     
     Boolean existsByEmail(String email);
     
-    @Query("SELECT COUNT(u) FROM User u WHERE u.role = :role")
-    long countByRole(@Param("role") String role);
+    List<User> findByRole(UserRole role);
+    
+    List<User> findByActive(boolean active);
+    
+    List<User> findByRoleAndActive(UserRole role, boolean active);
+    
+    Long countByRole(UserRole role);
+    
+    Long countByActive(boolean active);
 }
