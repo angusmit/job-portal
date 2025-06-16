@@ -68,7 +68,7 @@ public class AdminController {
         User admin = userRepository.findById(userPrincipal.getId()).orElseThrow();
         
         job.setApprovalStatus(ApprovalStatus.APPROVED);
-        job.setApprovedBy(admin);
+        job.setApprovedBy(admin.getUsername());
         job.setApprovedDate(LocalDateTime.now());
         job.setRejectionReason(null);
         
@@ -89,7 +89,7 @@ public class AdminController {
         User admin = userRepository.findById(userPrincipal.getId()).orElseThrow();
         
         job.setApprovalStatus(ApprovalStatus.REJECTED);
-        job.setApprovedBy(admin);
+        job.setApprovedBy(admin.getUsername());
         job.setApprovedDate(LocalDateTime.now());
         job.setRejectionReason(payload.get("reason"));
         

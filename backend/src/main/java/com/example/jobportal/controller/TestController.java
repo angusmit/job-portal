@@ -1,26 +1,27 @@
 package com.example.jobportal.controller;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.jobportal.dto.LoginRequest;
 import com.example.jobportal.model.User;
 import com.example.jobportal.repository.UserRepository;
 
 @RestController
 @RequestMapping("/api/test")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "http://localhost:3000")
 public class TestController {
     
     @Autowired
@@ -29,45 +30,53 @@ public class TestController {
     @Autowired
     private PasswordEncoder passwordEncoder;
     
-    @GetMapping("/users")
-    public List<String> getUsers() {
-        List<User> users = userRepository.findAll();
-        return users.stream()
-            .map(user -> user.getUsername() + " - " + user.getEmail() + " - " + user.getRole())
-            .toList();
-    }
-    
-    @GetMapping("/check-password/{username}")
-    public boolean checkPassword(@PathVariable String username, @RequestParam String password) {
-        User user = userRepository.findByUsername(username).orElse(null);
-        if (user == null) {
-            return false;
-        }
-        return passwordEncoder.matches(password, user.getPassword());
-    }
-    
-    @PostMapping("/test-login")
-    public Map<String, Object> testLogin(@RequestBody Map<String, String> credentials) {
-        String username = credentials.get("username");
-        String password = credentials.get("password");
-        
-        System.out.println("Test login - Username: " + username);
-        
-        User user = userRepository.findByUsername(username).orElse(null);
-        
-        Map<String, Object> response = new HashMap<>();
-        response.put("userFound", user != null);
-        if (user != null) {
-            response.put("passwordMatch", passwordEncoder.matches(password, user.getPassword()));
-            response.put("userRole", user.getRole());
-            response.put("userId", user.getId());
-        }
-        
-        return response;
-    }
-    
     @GetMapping("/ping")
     public String ping() {
         return "Auth system is running!";
+    }
+    
+    @GetMapping("/users")
+    public List<Map<String, String>> getAllUsers() {
+        List<Map<String, String>> userList = new ArrayList<>();
+        
+        List<User> users = userRepository.findAll();
+        for (User user : users) {
+            Map<String, String> userMap = new HashMap<>();
+            userMap.put("id", user.getId().toString());
+            userMap.put("username", user.getUsername());
+            userMap.put("email", user.getEmail());
+            userMap.put("role", user.getRole().toString());
+            userList.add(userMap);
+        }
+        
+        return userList;
+    }
+    
+    @PostMapping("/test-login")
+    public ResponseEntity<?> testLogin(@RequestBody LoginRequest loginRequest) {
+        System.out.println("=== TEST LOGIN ENDPOINT ===");
+        System.out.println("Username: " + loginRequest.getUsername());
+        System.out.println("Password: " + loginRequest.getPassword());
+        
+        // Check if user exists
+        User user = userRepository.findByUsername(loginRequest.getUsername()).orElse(null);
+        
+        if (user == null) {
+            System.out.println("User not found!");
+            return ResponseEntity.badRequest().body("User not found");
+        }
+        
+        System.out.println("User found: " + user.getUsername());
+        System.out.println("Stored password hash: " + user.getPassword());
+        
+        // Test password matching
+        boolean matches = passwordEncoder.matches(loginRequest.getPassword(), user.getPassword());
+        System.out.println("Password matches: " + matches);
+        
+        if (matches) {
+            return ResponseEntity.ok("Login successful!");
+        } else {
+            return ResponseEntity.badRequest().body("Invalid password");
+        }
     }
 }
