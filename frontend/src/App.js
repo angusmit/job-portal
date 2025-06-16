@@ -2,6 +2,7 @@
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import './App.css';
 import AdminDashboard from './components/AdminDashboard';
+import CVScreening from './components/CVScreening';
 import EditJob from './components/EditJob';
 import Header from './components/Header';
 import JobDetails from './components/JobDetails';
@@ -78,6 +79,14 @@ function App() {
               />
 
               {/* Job Seeker Routes */}
+              <Route
+                path="/cv-screening"
+                element={
+                  <ProtectedRoute allowedRoles={['JOB_SEEKER']}>
+                    <CVScreening />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/saved-jobs"
                 element={
