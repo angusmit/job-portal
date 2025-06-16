@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './AdminDashboard.css';
+import ScraperManagement from './ScraperManagement';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -250,6 +251,12 @@ const AdminDashboard = () => {
         >
           User Management
         </button>
+        <button
+          className={activeTab === 'scraper' ? 'active' : ''}
+          onClick={() => setActiveTab('scraper')}
+        >
+          Job Scraper
+        </button>
       </div>
 
       {/* Messages */}
@@ -443,6 +450,11 @@ const AdminDashboard = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Job Scraper Tab */}
+      {activeTab === 'scraper' && (
+        <ScraperManagement />
       )}
 
       {/* Rejection Modal */}

@@ -1,0 +1,87 @@
+/* frontend/src/components/CVScreening.css */
+.cv-screening-container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 2rem;
+}
+
+.cv-screening-container h1 {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: #333;
+}
+
+/* Upload Section */
+.upload-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: start;
+}
+
+@media (max-width: 968px) {
+    .upload-section {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Feature Info */
+.feature-info {
+    background: #f8f9fa;
+    padding: 2rem;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+}
+
+.feature-info h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    color: #333;
+}
+
+.feature-info ul {
+    margin: 0 0 1.5rem 0;
+    padding-left: 1.5rem;
+}
+
+.feature-info li {
+    margin-bottom: 0.5rem;
+    color: #666;
+}
+
+/* Resume Summary */
+.resume-summary {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
+}
+
+.resume-summary h3 {
+    margin: 0 0 1rem 0;
+    color: #333;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.summary-item {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.summary-item strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #555;
+}
+
+.summary-item p {
+    margin: 0;
+    color: #333;
+}

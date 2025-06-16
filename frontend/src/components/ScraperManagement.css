@@ -1,0 +1,400 @@
+/* frontend/src/components/ScraperManagement.css */
+.scraper-management {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 2rem;
+}
+
+.scraper-management h2 {
+    margin-bottom: 2rem;
+    color: #333;
+}
+
+/* Statistics */
+.scraper-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.scraper-stats .stat-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.scraper-stats .stat-card h4 {
+    margin: 0 0 0.5rem 0;
+    color: #666;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+}
+
+.scraper-stats .stat-card p {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: bold;
+    color: #2196f3;
+}
+
+/* Section Header */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.section-header h3 {
+    margin: 0;
+    color: #333;
+}
+
+.add-btn {
+    padding: 0.5rem 1rem;
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.add-btn:hover {
+    background-color: #45a049;
+}
+
+/* Sources List */
+.sources-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.source-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.source-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.source-header h4 {
+    margin: 0;
+    color: #333;
+}
+
+.status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.status.active {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.status.inactive {
+    background-color: #ffebee;
+    color: #c62828;
+}
+
+.source-details p {
+    margin: 0.5rem 0;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.source-details a {
+    color: #2196f3;
+    text-decoration: none;
+}
+
+.source-details a:hover {
+    text-decoration: underline;
+}
+
+.error-info {
+    color: #f44336;
+}
+
+.source-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.scrape-btn {
+    padding: 0.5rem 1rem;
+    background-color: #2196f3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.scrape-btn:hover {
+    background-color: #1976d2;
+}
+
+.activate-btn,
+.deactivate-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.activate-btn {
+    background-color: #4caf50;
+    color: white;
+}
+
+.activate-btn:hover {
+    background-color: #45a049;
+}
+
+.deactivate-btn {
+    background-color: #f44336;
+    color: white;
+}
+
+.deactivate-btn:hover {
+    background-color: #da190b;
+}
+
+/* Bulk Actions */
+.bulk-actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.select-all-btn {
+    padding: 0.5rem 1rem;
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.select-all-btn:hover {
+    background-color: #e0e0e0;
+}
+
+.import-btn {
+    padding: 0.5rem 1rem;
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.import-btn:hover:not(:disabled) {
+    background-color: #45a049;
+}
+
+.import-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+/* Scraped Jobs List */
+.scraped-jobs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.scraped-job-card {
+    display: flex;
+    gap: 1rem;
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    align-items: flex-start;
+}
+
+.scraped-job-card input[type="checkbox"] {
+    margin-top: 0.25rem;
+}
+
+.job-content {
+    flex: 1;
+}
+
+.job-content h4 {
+    margin: 0 0 0.5rem 0;
+    color: #333;
+}
+
+.job-content .company {
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 0.25rem;
+}
+
+.job-content .location,
+.job-content .scraped-date {
+    font-size: 0.9rem;
+    color: #777;
+    margin: 0.25rem 0;
+}
+
+.external-link {
+    display: inline-block;
+    margin-top: 0.5rem;
+    color: #2196f3;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.external-link:hover {
+    text-decoration: underline;
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-content.large {
+    max-width: 700px;
+}
+
+.modal-content h3 {
+    margin: 0 0 1.5rem 0;
+    color: #333;
+}
+
+.modal-content h4 {
+    margin: 1.5rem 0 0.5rem 0;
+    color: #555;
+}
+
+.help-text {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 1rem;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #555;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #2196f3;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+}
+
+.modal-actions button {
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.modal-actions button[type="button"] {
+    background-color: #f5f5f5;
+    color: #666;
+}
+
+.modal-actions button[type="button"]:hover {
+    background-color: #e0e0e0;
+}
+
+.primary-btn {
+    background-color: #2196f3;
+    color: white;
+}
+
+.primary-btn:hover {
+    background-color: #1976d2;
+}
+
+/* Common */
+.loading {
+    text-align: center;
+    padding: 3rem;
+    color: #666;
+}
+
+.no-data {
+    text-align: center;
+    padding: 3rem;
+    color: #999;
+    font-style: italic;
+}
+
+.error-message,
+.success-message {
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.error-message {
+    background-color: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef5350;
+}
+
+.success-message {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #66bb6a;
+}

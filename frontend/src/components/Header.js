@@ -38,9 +38,14 @@ const Header = () => {
               )}
 
               {user.role === 'JOB_SEEKER' && (
-                <Link to="/saved-jobs" className="nav-link">
-                  Saved Jobs
-                </Link>
+                <>
+                  <Link to="/cv-screening" className="nav-link">
+                    Smart Job Matching
+                  </Link>
+                  <Link to="/saved-jobs" className="nav-link">
+                    Saved Jobs
+                  </Link>
+                </>
               )}
 
               {user.role === 'ADMIN' && (
