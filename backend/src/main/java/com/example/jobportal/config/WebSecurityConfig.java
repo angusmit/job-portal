@@ -65,6 +65,7 @@ public class WebSecurityConfig {
             .exceptionHandling(exception -> exception.authenticationEntryPoint(authEntryPointJwt))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/test/**").permitAll()
                 .requestMatchers("/api/jobs").permitAll()
@@ -75,7 +76,8 @@ public class WebSecurityConfig {
                 .requestMatchers("/api/jobs/my-jobs").hasAuthority("EMPLOYER")
                 .requestMatchers("/api/jobs/saved").hasAuthority("JOB_SEEKER")
                 .anyRequest().authenticated()
-            );
+                
+            );        
 
         http.authenticationProvider(authenticationProvider());
         http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
