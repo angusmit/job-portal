@@ -1,5 +1,5 @@
 package com.example.jobportal.model;
 
-public enum ApprovalStatus {
+public enum JobStatus {
     PENDING, APPROVED, REJECTED
 }

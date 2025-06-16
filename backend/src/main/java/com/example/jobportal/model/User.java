@@ -11,6 +11,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -18,39 +19,40 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.OneToMany;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.ToString;
+import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "users", 
-       uniqueConstraints = {
-           @UniqueConstraint(columnNames = "username"),
-           @UniqueConstraint(columnNames = "email")
-       })
 @Data
-@EqualsAndHashCode(exclude = {"savedJobs", "postedJobs"})
-@ToString(exclude = {"savedJobs", "postedJobs", "password"})
+@NoArgsConstructor
+@AllArgsConstructor
+@Table(name = "users")
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     
-    @Column(nullable = false, unique = true)
+    @NotBlank
+    @Size(min = 3, max = 50)
+    @Column(unique = true)
     private String username;
     
-    @Column(nullable = false, unique = true)
+    @NotBlank
+    @Email
+    @Column(unique = true)
     private String email;
     
-    @Column(nullable = false)
+    @NotBlank
+    @Size(min = 6)
     @JsonIgnore
     private String password;
     
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private UserRole role;
     
     private String firstName;
@@ -58,6 +60,7 @@ public class User {
     private String phoneNumber;
     
     // Job Seeker specific fields
+    @Column(length = 2000)
     private String resumeSummary;
     private String skills;
     private String experience;
@@ -65,41 +68,21 @@ public class User {
     
     // Employer specific fields
     private String companyName;
-    @Column(columnDefinition = "TEXT")
     private String companyDescription;
     private String companyWebsite;
+    private String companySize;
     
-    // Account status
-    @Column(nullable = false)
+    private LocalDateTime createdAt = LocalDateTime.now();
     private boolean active = true;
     
-    // Timestamps
-    @Column(nullable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
-    
-    private LocalDateTime lastLogin;
-    
-    // Job relationships
-    @ManyToMany
-    @JoinTable(
-        name = "user_saved_jobs",
-        joinColumns = @JoinColumn(name = "user_id"),
-        inverseJoinColumns = @JoinColumn(name = "job_id")
-    )
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "saved_jobs",
+            joinColumns = @JoinColumn(name = "user_id"),
+            inverseJoinColumns = @JoinColumn(name = "job_id"))
     @JsonIgnore
     private Set<Job> savedJobs = new HashSet<>();
     
     @OneToMany(mappedBy = "postedBy", cascade = CascadeType.ALL)
     @JsonIgnore
     private Set<Job> postedJobs = new HashSet<>();
-    
-    @PrePersist
-    public void prePersist() {
-        if (createdAt == null) {
-            createdAt = LocalDateTime.now();
-        }
-        if (!active) {
-            active = true;
-        }
-    }
 }
