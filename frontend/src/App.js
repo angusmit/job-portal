@@ -7,6 +7,7 @@ import EditJob from './components/EditJob';
 import Header from './components/Header';
 import JobDetails from './components/JobDetails';
 import JobList from './components/JobList';
+import JobMatchingDashboard from './components/JobMatchingDashboard';
 import Login from './components/Login';
 import MyJobs from './components/MyJobs';
 import PostJob from './components/PostJob';
@@ -41,7 +42,6 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/jobs/:id" element={<JobDetails />} />
-
               {/* Employer Routes */}
               <Route
                 path="/post-job"
@@ -92,6 +92,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['JOB_SEEKER']}>
                     <div>Saved Jobs - Coming Soon</div>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/job-matches"
+                element={
+                  <ProtectedRoute allowedRoles={['JOB_SEEKER']}>
+                    <JobMatchingDashboard />
                   </ProtectedRoute>
                 }
               />

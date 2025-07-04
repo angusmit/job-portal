@@ -45,6 +45,9 @@ const Header = () => {
                   <Link to="/saved-jobs" className="nav-link">
                     Saved Jobs
                   </Link>
+                  <Link to="/job-matches" className="nav-link">
+                    AI Job Matching
+                  </Link>
                 </>
               )}
 

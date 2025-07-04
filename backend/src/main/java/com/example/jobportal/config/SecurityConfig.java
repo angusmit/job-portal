@@ -27,18 +27,13 @@ import com.example.jobportal.security.AuthTokenFilter;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
-public class WebSecurityConfig {
+public class SecurityConfig {
+
+    @Autowired
+    private AuthEntryPointJwt jwtAuthenticationEntryPoint;
 
     @Autowired
     private UserDetailsService userDetailsService;
-
-    @Autowired
-    private AuthEntryPointJwt authEntryPointJwt;
-
-    @Bean
-    public AuthTokenFilter authenticationJwtTokenFilter() {
-        return new AuthTokenFilter();
-    }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -54,30 +49,41 @@ public class WebSecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
+    public AuthenticationManager authenticationManager(
+            AuthenticationConfiguration authConfig) throws Exception {
         return authConfig.getAuthenticationManager();
     }
-
+    
+    @Bean
+    public AuthTokenFilter authenticationJwtTokenFilter() {
+        return new AuthTokenFilter();
+    }
+    
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
-            .exceptionHandling(exception -> exception.authenticationEntryPoint(authEntryPointJwt))
+            .exceptionHandling(handling -> handling.authenticationEntryPoint(jwtAuthenticationEntryPoint))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/test/**").permitAll()
+                .requestMatchers("/api/jobs/public/**").permitAll()
                 .requestMatchers("/api/jobs").permitAll()
                 .requestMatchers("/api/jobs/{id}").permitAll()
                 .requestMatchers("/api/jobs/search").permitAll()
                 .requestMatchers("/api/jobs/filter").permitAll()
+                .requestMatchers("/api/test/**").permitAll()
+                .requestMatchers("/api/match/upload-cv").authenticated()
+                .requestMatchers("/api/match/jobs").authenticated()
+                .requestMatchers("/api/match/clear-cv").authenticated()
+                .requestMatchers("/api/cv/**").authenticated()
                 .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
                 .requestMatchers("/api/jobs/my-jobs").hasAuthority("EMPLOYER")
                 .requestMatchers("/api/jobs/saved").hasAuthority("JOB_SEEKER")
                 .anyRequest().authenticated()
-                
-            );        
+            );
 
         http.authenticationProvider(authenticationProvider());
         http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
@@ -88,11 +94,19 @@ public class WebSecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000"));
+        
+        // Fix: Don't mix allowedOrigins and allowedOriginPatterns when using credentials
+        // Use ONLY allowedOriginPatterns when credentials are true
+        configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:3000", "http://localhost:3001"));
+        
+        // Don't set allowedOrigins at all when using allowedOriginPatterns
+        // configuration.setAllowedOrigins(Arrays.asList()); // Remove this line
+        
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
-        
+        configuration.setExposedHeaders(Arrays.asList("Authorization"));
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
