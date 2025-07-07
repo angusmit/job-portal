@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: job-portal-backend
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/jobportal
+    username: postgres
+    password: postgres
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  
+  redis:
+    host: localhost
+    port: 6379
+  
+  security:
+    jwt:
+      secret: mySecretKeyThatIsAtLeast512BitsLongForHS256AlgorithmRequirementsPleaseChangeInProduction
+      expiration: 86400000
+
+server:
+  port: 8080
+
+ml-service:
+  url: http://localhost:8000
