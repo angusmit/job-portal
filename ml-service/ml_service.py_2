@@ -1,0 +1,278 @@
+# ml_service_minimal.py - Minimal working version for testing
+
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional, Dict
+import json
+import hashlib
+from datetime import datetime
+import asyncio
+import uvicorn
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Job Matching ML Service")
+
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Request/Response Models
+class CVParseResponse(BaseModel):
+    member_id: str
+    extracted_text: str
+    skills: List[str]
+    experience_years: int
+    seniority_level: str
+    title: Optional[str]
+    location: Optional[str]
+
+class JobMatchRequest(BaseModel):
+    session_id: str
+    member_id: str
+    mode: str = "graduate_friendly"
+    top_k: int = 10
+
+class JobMatchResponse(BaseModel):
+    matches: List[Dict]
+    total_matches: int
+
+class JobData(BaseModel):
+    job_id: str
+    title: str
+    description: str
+    company: str
+    required_skills: List[str]
+    preferred_skills: List[str] = []
+    experience_required: int
+    location: str
+    seniority_level: str
+
+# In-memory storage for testing
+jobs_db = {}
+members_db = {}
+
+# Mock CV Parser Functions
+def extract_text_from_file(content: bytes, filename: str) -> str:
+    """Mock text extraction"""
+    # For testing, just return a sample text
+    return "Senior Python developer with 5 years experience in Django and FastAPI."
+
+def extract_skills(text: str) -> List[str]:
+    """Mock skill extraction"""
+    # Simple keyword matching for demo
+    skills = []
+    skill_keywords = ["python", "java", "javascript", "react", "django", "fastapi", 
+                     "docker", "kubernetes", "aws", "sql", "mongodb"]
+    
+    text_lower = text.lower()
+    for skill in skill_keywords:
+        if skill in text_lower:
+            skills.append(skill)
+    
+    return skills if skills else ["python", "communication", "teamwork"]
+
+def extract_experience_years(text: str) -> int:
+    """Mock experience extraction"""
+    import re
+    match = re.search(r'(\d+)\s*years?', text.lower())
+    return int(match.group(1)) if match else 1
+
+def determine_seniority_level(text: str, experience_years: int) -> str:
+    """Mock seniority determination"""
+    if experience_years >= 5:
+        return "senior"
+    elif experience_years >= 3:
+        return "mid"
+    elif experience_years >= 1:
+        return "junior"
+    else:
+        return "entry"
+
+# API Endpoints
+@app.get("/")
+async def root():
+    return {"message": "Job Matching ML Service is running"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+@app.post("/parse_cv", response_model=CVParseResponse)
+async def parse_cv(file: UploadFile = File(...), session_id: str = "default"):
+    """Parse uploaded CV and extract relevant information"""
+    try:
+        logger.info(f"Parsing CV for session: {session_id}")
+        
+        # Read file content
+        content = await file.read()
+        
+        # Mock text extraction
+        text = extract_text_from_file(content, file.filename)
+        
+        # Extract information
+        skills = extract_skills(text)
+        experience_years = extract_experience_years(text)
+        seniority_level = determine_seniority_level(text, experience_years)
+        
+        # Generate member ID
+        member_id = f"session_{session_id}_{hashlib.md5(text.encode()).hexdigest()[:8]}"
+        
+        # Store in memory for testing
+        members_db[member_id] = {
+            "member_id": member_id,
+            "cv_text": text,
+            "skills": skills,
+            "experience_years": experience_years,
+            "seniority_level": seniority_level,
+            "parsed_at": datetime.now().isoformat()
+        }
+        
+        return CVParseResponse(
+            member_id=member_id,
+            extracted_text=text[:200] + "..." if len(text) > 200 else text,
+            skills=skills,
+            experience_years=experience_years,
+            seniority_level=seniority_level,
+            title="Python Developer",  # Mock title
+            location="Remote"
+        )
+    
+    except Exception as e:
+        logger.error(f"Error parsing CV: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/match_jobs", response_model=JobMatchResponse)
+async def match_jobs(request: JobMatchRequest):
+    """Get job matches for a parsed CV"""
+    try:
+        logger.info(f"Getting matches for member: {request.member_id}")
+        
+        # Check if member exists
+        if request.member_id not in members_db:
+            raise HTTPException(status_code=404, detail="Member not found")
+        
+        member_info = members_db[request.member_id]
+        
+        # Mock matching - return sample jobs
+        sample_matches = []
+        
+        # Add some sample jobs if none exist
+        if not jobs_db:
+            sample_jobs = [
+                {
+                    "job_id": "j1",
+                    "title": "Senior Python Developer",
+                    "company": "TechCorp",
+                    "description": "Looking for experienced Python developer...",
+                    "required_skills": ["python", "django", "docker"],
+                    "experience_required": 5,
+                    "location": "Remote",
+                    "seniority_level": "senior",
+                    "match_score": 0.92,
+                    "match_quality": "EXCELLENT"
+                },
+                {
+                    "job_id": "j2",
+                    "title": "Python Backend Engineer",
+                    "company": "StartupXYZ",
+                    "description": "Join our growing team...",
+                    "required_skills": ["python", "fastapi", "sql"],
+                    "experience_required": 3,
+                    "location": "NYC",
+                    "seniority_level": "mid",
+                    "match_score": 0.78,
+                    "match_quality": "GOOD"
+                }
+            ]
+            
+            for job in sample_jobs:
+                jobs_db[job["job_id"]] = job
+        
+        # Create matches based on stored jobs
+        for job_id, job in jobs_db.items():
+            # Simple scoring based on skill overlap
+            member_skills = set(member_info["skills"])
+            job_skills = set(job["required_skills"])
+            
+            if member_skills & job_skills:  # If any skills match
+                match = job.copy()
+                skill_overlap = len(member_skills & job_skills) / len(job_skills) if job_skills else 0
+                match["match_score"] = round(0.5 + (skill_overlap * 0.5), 2)
+                match["match_quality"] = "EXCELLENT" if match["match_score"] > 0.8 else "GOOD"
+                sample_matches.append(match)
+        
+        return JobMatchResponse(
+            matches=sample_matches[:request.top_k],
+            total_matches=len(sample_matches)
+        )
+    
+    except Exception as e:
+        logger.error(f"Error matching jobs: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/add_job")
+async def add_job(job: JobData):
+    """Add a new job to the matching system"""
+    try:
+        logger.info(f"Adding job: {job.job_id}")
+        
+        jobs_db[job.job_id] = {
+            "job_id": job.job_id,
+            "title": job.title,
+            "company": job.company,
+            "description": job.description[:200] + "...",
+            "required_skills": job.required_skills,
+            "experience_required": job.experience_required,
+            "location": job.location,
+            "seniority_level": job.seniority_level
+        }
+        
+        return {"status": "success", "job_id": job.job_id}
+    
+    except Exception as e:
+        logger.error(f"Error adding job: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/train_model")
+async def train_model():
+    """Mock model training endpoint"""
+    try:
+        logger.info("Training model (mock)")
+        
+        # Simulate training delay
+        await asyncio.sleep(1)
+        
+        return {
+            "status": "success",
+            "message": "Model training completed (mock)",
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error training model: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize the service"""
+    logger.info("Starting Job Matching ML Service")
+    logger.info("This is a minimal version for testing")
+    logger.info("Replace with full implementation when ready")
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    logger.error(f"Unhandled exception: {str(exc)}")
+    return {"error": "Internal server error", "detail": str(exc)}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
