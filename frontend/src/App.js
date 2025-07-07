@@ -3,15 +3,18 @@ import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-d
 import './App.css';
 import AdminDashboard from './components/AdminDashboard';
 import CVScreening from './components/CVScreening';
+import CVUpload from './components/CVUpload';
 import EditJob from './components/EditJob';
 import Header from './components/Header';
 import JobDetails from './components/JobDetails';
 import JobList from './components/JobList';
+import JobMatchingDashboard from './components/JobMatchingDashboard.js';
 import Login from './components/Login';
 import MyJobs from './components/MyJobs';
 import PostJob from './components/PostJob';
 import Register from './components/Register';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import SavedJobs from './components/SavedJobs';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
@@ -41,7 +44,6 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/jobs/:id" element={<JobDetails />} />
-
               {/* Employer Routes */}
               <Route
                 path="/post-job"
@@ -88,10 +90,26 @@ function App() {
                 }
               />
               <Route
+                path="/cv-upload"
+                element={
+                  <ProtectedRoute allowedRoles={['JOB_SEEKER']}>
+                    <CVUpload />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/saved-jobs"
                 element={
                   <ProtectedRoute allowedRoles={['JOB_SEEKER']}>
                     <div>Saved Jobs - Coming Soon</div>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/job-matches"
+                element={
+                  <ProtectedRoute allowedRoles={['JOB_SEEKER']}>
+                    <JobMatchingDashboard />
                   </ProtectedRoute>
                 }
               />

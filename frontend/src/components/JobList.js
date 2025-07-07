@@ -1,12 +1,14 @@
-// frontend/src/components/JobList.js
+import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import './JobList.css';
 
 const JobList = () => {
   const [jobs, setJobs] = useState([]);
+  const [filteredJobs, setFilteredJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
   const [filterJobType, setFilterJobType] = useState('');
@@ -18,22 +20,12 @@ const JobList = () => {
   const fetchJobs = async () => {
     try {
       setLoading(true);
-      setError(null);
-
-      const response = await fetch('http://localhost:8080/api/jobs');
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('Fetched jobs:', data);
-
-      setJobs(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error fetching jobs:', error);
-      setError(`Failed to load jobs: ${error.message}`);
-      setJobs([]);
+      setError('');
+      const response = await axios.get('http://localhost:8080/api/jobs');
+      setJobs(response.data);
+      setFilteredJobs(response.data);
+    } catch (err) {
+      setError('Failed to load jobs');
     } finally {
       setLoading(false);
     }
@@ -42,20 +34,19 @@ const JobList = () => {
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!searchQuery.trim()) {
-      fetchJobs();
+      setFilteredJobs(jobs);
       return;
     }
 
     try {
       setLoading(true);
-      setError(null);
-      const response = await fetch(`http://localhost:8080/api/jobs/search?query=${encodeURIComponent(searchQuery)}`);
-      const data = await response.json();
-      setJobs(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error searching jobs:', error);
-      setError('Failed to search jobs. Please try again.');
-      setJobs([]);
+      const response = await axios.get('http://localhost:8080/api/jobs/search', {
+        params: { query: searchQuery }
+      });
+      setFilteredJobs(response.data);
+    } catch (err) {
+      setError('Search failed');
+      setFilteredJobs([]);
     } finally {
       setLoading(false);
     }
@@ -64,18 +55,14 @@ const JobList = () => {
   const handleFilter = async () => {
     try {
       setLoading(true);
-      setError(null);
       let url = 'http://localhost:8080/api/jobs/filter?';
       if (filterLocation) url += `location=${encodeURIComponent(filterLocation)}&`;
       if (filterJobType) url += `jobType=${encodeURIComponent(filterJobType)}`;
-
-      const response = await fetch(url);
-      const data = await response.json();
-      setJobs(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error filtering jobs:', error);
-      setError('Failed to filter jobs. Please try again.');
-      setJobs([]);
+      const response = await axios.get(url);
+      setFilteredJobs(response.data);
+    } catch (err) {
+      setError('Failed to filter jobs');
+      setFilteredJobs([]);
     } finally {
       setLoading(false);
     }
@@ -85,16 +72,8 @@ const JobList = () => {
     setSearchQuery('');
     setFilterLocation('');
     setFilterJobType('');
-    fetchJobs();
+    setFilteredJobs(jobs);
   };
-
-  if (loading) {
-    return (
-      <div className="job-list-container">
-        <div className="loading">Loading jobs...</div>
-      </div>
-    );
-  }
 
   return (
     <div className="job-list-container">
@@ -107,51 +86,49 @@ const JobList = () => {
         </div>
       )}
 
-      {/* Search Section */}
-      <div className="search-section">
-        <form onSubmit={handleSearch} className="search-form">
-          <input
-            type="text"
-            placeholder="Search jobs by title, company, or keywords..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="search-input"
-          />
-          <button type="submit" className="search-btn">Search</button>
-        </form>
-      </div>
+      {/* Search Bar */}
+      <form onSubmit={handleSearch} className="search-form">
+        <input
+          type="text"
+          placeholder="Search by title, company, or keywords..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="search-input"
+        />
+        <button type="submit" className="search-btn">Search</button>
+      </form>
 
-      {/* Filter Section */}
+      {/* Filters */}
       <div className="filter-section">
-        <div className="filter-group">
-          <input
-            type="text"
-            placeholder="Location"
-            value={filterLocation}
-            onChange={(e) => setFilterLocation(e.target.value)}
-            className="filter-input"
-          />
-          <select
-            value={filterJobType}
-            onChange={(e) => setFilterJobType(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">All Job Types</option>
-            <option value="Full-time">Full-time</option>
-            <option value="Part-time">Part-time</option>
-            <option value="Contract">Contract</option>
-            <option value="Internship">Internship</option>
-            <option value="Remote">Remote</option>
-          </select>
-          <button onClick={handleFilter} className="filter-btn">Apply Filters</button>
-          <button onClick={clearFilters} className="clear-btn">Clear</button>
-        </div>
+        <input
+          type="text"
+          placeholder="Location"
+          value={filterLocation}
+          onChange={(e) => setFilterLocation(e.target.value)}
+          className="filter-input"
+        />
+        <select
+          value={filterJobType}
+          onChange={(e) => setFilterJobType(e.target.value)}
+          className="filter-select"
+        >
+          <option value="">All Job Types</option>
+          <option value="Full-time">Full-time</option>
+          <option value="Part-time">Part-time</option>
+          <option value="Contract">Contract</option>
+          <option value="Internship">Internship</option>
+          <option value="Remote">Remote</option>
+        </select>
+        <button onClick={handleFilter} className="filter-btn">Apply Filters</button>
+        <button onClick={clearFilters} className="clear-btn">Clear</button>
       </div>
 
       {/* Jobs Grid */}
       <div className="jobs-grid">
-        {jobs.length === 0 ? (
-          <div className="no-jobs">
+        {loading ? (
+          <div className="loading">Loading jobs...</div>
+        ) : filteredJobs.length === 0 ? (
+          <div className="no-results">
             <p>No jobs found.</p>
             {(searchQuery || filterLocation || filterJobType) && (
               <button onClick={clearFilters} className="clear-btn">
@@ -160,33 +137,83 @@ const JobList = () => {
             )}
           </div>
         ) : (
-          jobs.map(job => (
-            <div key={job.id} className="job-card">
-              <h3>{job.title}</h3>
-              <p className="company">{job.company}</p>
-              <p className="location">📍 {job.location}</p>
-              <p className="job-type">💼 {job.jobType}</p>
-              {job.salary && <p className="salary">💰 {job.salary}</p>}
-              <p className="description">
-                {job.description.substring(0, 150)}...
-              </p>
-              <div className="job-footer">
-                <span className="posted-date">
-                  Posted {new Date(job.postedDate).toLocaleDateString()}
-                </span>
-                <Link to={`/jobs/${job.id}`} className="view-details-btn">
-                  View Details
-                </Link>
-              </div>
-              {job.approvalStatus && (
-                <span className={`status-badge ${job.approvalStatus.toLowerCase()}`}>
-                  {job.approvalStatus}
-                </span>
-              )}
-            </div>
+          filteredJobs.map(job => (
+            <JobCard key={job.id} job={job} />
           ))
         )}
       </div>
+    </div>
+  );
+};
+
+const JobCard = ({ job }) => {
+  const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    checkSavedStatus();
+  }, []);
+
+  const checkSavedStatus = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const res = await axios.get(`http://localhost:8080/api/jobs/${job.id}/is-saved`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setIsSaved(res.data.saved);
+    } catch {
+      setIsSaved(false);
+    }
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      if (isSaved) {
+        await axios.delete(`http://localhost:8080/api/jobs/${job.id}/save`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setIsSaved(false);
+      } else {
+        await axios.post(`http://localhost:8080/api/jobs/${job.id}/save`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setIsSaved(true);
+      }
+    } catch {
+      console.error('Failed to toggle saved state');
+    }
+  };
+
+  return (
+    <div className="job-card">
+      <h3>{job.title}</h3>
+      <p className="company">{job.company}</p>
+      <p className="location">📍 {job.location}</p>
+      <p className="job-type">💼 {job.jobType}</p>
+      {job.salary && <p className="salary">💰 {job.salary}</p>}
+      <p className="description">{job.description.substring(0, 150)}...</p>
+      <div className="job-footer">
+        <span className="posted-date">
+          Posted {new Date(job.postedDate).toLocaleDateString()}
+        </span>
+        <Link to={`/jobs/${job.id}`} className="view-details-btn">
+          View Details
+        </Link>
+        {localStorage.getItem('token') && (
+          <button onClick={handleSave} className="save-btn">
+            {isSaved ? '❤️' : '🤍'}
+          </button>
+        )}
+      </div>
+      {job.approvalStatus && (
+        <span className={`status-badge ${job.approvalStatus.toLowerCase()}`}>
+          {job.approvalStatus}
+        </span>
+      )}
     </div>
   );
 };
