@@ -1,4 +1,6 @@
 /* frontend/src/components/JobMatchingDashboard.css */
+
+/* General Layout */
 .job-matching-dashboard {
   max-width: 1200px;
   margin: 0 auto;
@@ -413,4 +415,90 @@
     padding: 6px 12px;
     font-size: 13px;
   }
+}
+
+/* Add these styles to JobMatchingDashboard.css: */
+.match-insights {
+  margin-top: 12px;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.skill-match-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.match-value {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.matched-skills,
+.skills-gap {
+  margin: 8px 0;
+}
+
+.skills-label {
+  display: block;
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.skill-tag {
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.skill-tag.matched {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.skill-tag.to-learn {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.skill-tag.more {
+  background-color: #e5e7eb;
+  color: #374151;
+}
+
+.match-reason {
+  margin-top: 12px;
+  padding: 8px;
+  background-color: #eff6ff;
+  border-left: 3px solid #3b82f6;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #1e40af;
+}
+
+.fit-details {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.fit-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
