@@ -1,4 +1,4 @@
-# ml_service.py - FastAPI wrapper for your GNN job matching system
+# ml_service.py - Fixed version with proper error handling and type checking
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +33,6 @@ from enhanced_cv_parser import (
 )
 from enhanced_matching import get_recommendations_enhanced
 
-
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,23 +42,32 @@ app = FastAPI(title="Job Matching ML Service")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8080"],
+    allow_origins=["http://localhost:3000", "http://localhost:8080", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize Redis
-redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
+# Initialize Redis with error handling
+try:
+    redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
+    redis_client.ping()
+    logger.info("Redis connection successful")
+except Exception as e:
+    logger.warning(f"Redis connection failed: {e}. Using in-memory storage.")
+    redis_client = None
 
 # Initialize models
 matcher = ImprovedJobMatcher()
 
+# In-memory storage as fallback
+memory_storage = {}
+
 # Request/Response Models
 class CVParseRequest(BaseModel):
     session_id: str
-    file_content: str  # Base64 encoded
-    file_type: str     # pdf, docx, txt
+    file_content: str
+    file_type: str
 
 class ParseCVDirectRequest(BaseModel):
     session_id: str
@@ -73,11 +81,12 @@ class CVParseResponse(BaseModel):
     seniority_level: str
     title: Optional[str]
     location: Optional[str]
+    education: Optional[str] = None
 
 class JobMatchRequest(BaseModel):
     session_id: str
     member_id: str
-    mode: str = "graduate_friendly"  # strict, flexible, graduate_friendly, experience_based
+    mode: str = "graduate_friendly"
     top_k: int = 10
 
 class JobMatchResponse(BaseModel):
@@ -95,8 +104,34 @@ class JobData(BaseModel):
     location: str
     seniority_level: str
 
-# --- CV Parser Functions ---
+# Storage helpers
+def store_data(key: str, data: dict, expire_time: timedelta = timedelta(hours=1)):
+    """Store data in Redis or memory"""
+    if redis_client:
+        try:
+            redis_client.setex(key, expire_time, json.dumps(data))
+        except:
+            memory_storage[key] = {"data": data, "expire": datetime.now() + expire_time}
+    else:
+        memory_storage[key] = {"data": data, "expire": datetime.now() + expire_time}
 
+def retrieve_data(key: str) -> Optional[dict]:
+    """Retrieve data from Redis or memory"""
+    if redis_client:
+        try:
+            data = redis_client.get(key)
+            return json.loads(data) if data else None
+        except:
+            pass
+    
+    if key in memory_storage:
+        if memory_storage[key]["expire"] > datetime.now():
+            return memory_storage[key]["data"]
+        else:
+            del memory_storage[key]
+    return None
+
+# CV Parser Functions
 def extract_text_from_pdf(file_content: io.BytesIO) -> str:
     """Extract text from PDF using BytesIO object"""
     text = ""
@@ -120,70 +155,194 @@ def extract_text_from_docx(file_content: io.BytesIO) -> str:
         logger.error(f"Error extracting text from DOCX: {e}")
         raise
 
-# Replace the existing extract_skills function
-extract_skills = extract_skills_enhanced
 
-# Replace the existing extract_experience_years function  
-extract_experience_years = extract_experience_years_enhanced
-
-# Replace the existing determine_seniority_level function
-determine_seniority_level = determine_seniority_level_enhanced
-
-
-def extract_title(text: str) -> Optional[str]:
-    """Extract job title from CV"""
-    patterns = [
-        r'(?:current\s*position|role|title):\s*([^\n]+)',
-        r'(?:^|\n)([A-Za-z\s]+(?:Developer|Engineer|Analyst|Scientist|Designer|Manager))',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(1).strip()
-    return None
-
-def extract_skills_from_description(description: str) -> List[str]:
-    """Extract required skills from job description text"""
-    return extract_skills(description)
+# Add this method to ensure the graph is properly initialized
+def ensure_graph_initialized():
+    """Ensure the matcher graph is properly initialized"""
+    if not hasattr(matcher, 'graph'):
+        from improved_cv_matcher import JobMatchingGraph
+        matcher.graph = JobMatchingGraph()
+    
+    if not hasattr(matcher.graph, 'nodes'):
+        matcher.graph.nodes = {}
+    
+    if 'job' not in matcher.graph.nodes:
+        matcher.graph.nodes['job'] = {}
+    
+    if 'member' not in matcher.graph.nodes:
+        matcher.graph.nodes['member'] = {}
 
 def fetch_jobs_from_spring_boot():
-    """Fetch approved jobs from Spring Boot backend"""
+    """Fetch approved jobs from Spring Boot backend with robust error handling and skill/title extraction"""
+    ensure_graph_initialized()
+
     try:
-        response = requests.get('http://localhost:8080/api/jobs', headers={'Accept': 'application/json'})
-        if response.status_code == 200:
-            jobs_data = response.json()
-            jobs = []
-            for job_data in jobs_data:
-                all_text = f"{job_data.get('description', '')} {job_data.get('requirements', '')}"
-                skills = extract_skills(all_text)
-                experience_years = extract_experience_years(job_data.get('requirements', ''))
-                if experience_years == 0 and 'senior' in job_data.get('title', '').lower():
-                    experience_years = 5
-                elif experience_years == 0 and 'mid' in job_data.get('title', '').lower():
-                    experience_years = 3
-                seniority = determine_seniority_level(all_text, experience_years)
-                job = Job(
-                    job_id=str(job_data['id']),
-                    title=job_data['title'],
-                    description=job_data['description'],
-                    company=job_data['company'],
-                    required_skills=skills,
-                    preferred_skills=[],
-                    experience_required=experience_years,
-                    location=job_data['location'],
-                    seniority_level=seniority
+        urls_to_try = [
+            'http://localhost:8080/api/jobs',
+            'http://127.0.0.1:8080/api/jobs',
+            'http://host.docker.internal:8080/api/jobs'  # Docker fallback
+        ]
+
+        jobs = []
+        response = None
+
+        for url in urls_to_try:
+            try:
+                response = requests.get(
+                    url,
+                    headers={'Accept': 'application/json'},
+                    timeout=5
                 )
-                jobs.append(job)
+                if response.status_code == 200:
+                    logger.info(f"Connected to Spring Boot at {url}")
+                    break
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"Connection failed: {url}")
+                continue
+
+        if response and response.status_code == 200:
+            jobs_data = response.json()
+            logger.info(f"Fetched {len(jobs_data)} jobs from Spring Boot")
+
+            for job_data in jobs_data:
+                try:
+                    title = str(job_data.get('title', '') or '')
+                    description = str(job_data.get('description', '') or '')
+                    requirements = str(job_data.get('requirements', '') or '')
+                    company = str(job_data.get('company', '') or '')
+                    location = str(job_data.get('location', '') or '')
+
+                    all_text = f"{title} {description} {requirements}"
+
+                    # Extract skills from text and title
+                    skills = []
+                    if all_text.strip():
+                        skills = extract_skills_enhanced(all_text)
+                        title_skills = extract_skills_from_title(title)
+                        skills = list(set(skills + title_skills))
+
+                    if skills:
+                        logger.debug(f"Extracted skills for '{title}': {skills[:5]}...")
+
+                    experience_years = 0
+                    if requirements:
+                        experience_years = extract_experience_years_enhanced(requirements)
+
+                    if experience_years == 0 and title:
+                        title_lower = title.lower()
+                        if 'senior' in title_lower or 'lead' in title_lower:
+                            experience_years = 5
+                        elif 'mid' in title_lower or 'middle' in title_lower:
+                            experience_years = 3
+                        elif 'junior' in title_lower:
+                            experience_years = 1
+                        elif 'entry' in title_lower or 'graduate' in title_lower:
+                            experience_years = 0
+
+                    seniority = determine_seniority_level_enhanced(experience_years, all_text)
+
+                    job = Job(
+                        job_id=str(job_data.get('id', '')),
+                        title=title,
+                        description=description,
+                        company=company,
+                        required_skills=skills,
+                        preferred_skills=[],
+                        experience_required=experience_years,
+                        location=location,
+                        seniority_level=seniority
+                    )
+                    jobs.append(job)
+
+                except Exception as e:
+                    logger.error(f"Error processing job {job_data.get('id', 'unknown')}: {e}")
+                    continue
+
+            logger.info(f"Processed {len(jobs)} jobs successfully")
             return jobs
         else:
-            logger.error(f"Failed to fetch jobs from Spring Boot: {response.status_code}")
+            logger.warning("Could not connect to any Spring Boot API endpoint")
             return []
+
     except Exception as e:
-        logger.error(f"Error fetching jobs from Spring Boot: {e}")
+        logger.error(f"Unexpected error fetching jobs: {e}")
         return []
 
-# --- API Endpoints ---
 
+def extract_skills_from_title(title: str) -> List[str]:
+    """Extract common tech skills based on keywords in job title"""
+    skills = []
+    title_lower = title.lower()
+
+    title_skills = {
+        'java': ['java'],
+        'python': ['python'],
+        'react': ['react', 'javascript'],
+        'angular': ['angular', 'javascript'],
+        'node': ['node.js', 'javascript'],
+        'full stack': ['javascript', 'react', 'node.js'],
+        'frontend': ['javascript', 'react', 'css', 'html'],
+        'backend': ['java', 'python', 'sql'],
+        'devops': ['docker', 'kubernetes', 'aws'],
+        'data': ['python', 'sql', 'data-analysis'],
+        'machine learning': ['python', 'machine-learning', 'tensorflow'],
+        'ml': ['python', 'machine-learning'],
+        'ai': ['python', 'machine-learning', 'ai'],
+        '.net': ['csharp', '.net'],
+        'android': ['java', 'kotlin', 'android'],
+        'ios': ['swift', 'ios'],
+        'cloud': ['aws', 'azure', 'gcp'],
+        'aws': ['aws', 'cloud'],
+    }
+
+    for keyword, associated_skills in title_skills.items():
+        if keyword in title_lower:
+            skills.extend(associated_skills)
+
+    return list(set(skills))
+
+
+def get_sample_jobs():
+    """Return sample jobs for testing when Spring Boot is not available"""
+    sample_jobs = [
+        Job(
+            job_id="sample_1",
+            title="Senior Software Engineer",
+            description="We are looking for a Senior Software Engineer with expertise in Python and React",
+            company="Tech Corp",
+            required_skills=["python", "react", "javascript", "sql"],
+            preferred_skills=["docker", "kubernetes"],
+            experience_required=5,
+            location="Remote",
+            seniority_level="senior"
+        ),
+        Job(
+            job_id="sample_2",
+            title="Junior Data Analyst",
+            description="Entry-level position for data analysis using Python and SQL",
+            company="Data Inc",
+            required_skills=["python", "sql", "data-analysis"],
+            preferred_skills=["tableau", "excel"],
+            experience_required=0,
+            location="New York",
+            seniority_level="junior"
+        ),
+        Job(
+            job_id="sample_3",
+            title="Full Stack Developer",
+            description="Mid-level full stack developer position with React and Node.js",
+            company="Web Solutions",
+            required_skills=["javascript", "react", "node.js", "mongodb"],
+            preferred_skills=["typescript", "aws"],
+            experience_required=3,
+            location="San Francisco",
+            seniority_level="mid"
+        )
+    ]
+    logger.info("Using sample jobs for testing")
+    return sample_jobs
+
+# API Endpoints
 @app.post("/upload_cv")
 async def upload_cv(
     file: UploadFile = File(...),
@@ -211,18 +370,11 @@ async def upload_cv(
         title = extract_title(text)
         education = extract_education(text)
         
-        # Log extraction results for debugging
-        print(f"Extracted skills ({len(skills)}): {skills[:10]}...")
-        print(f"Experience: {experience_years} years")
-        print(f"Seniority: {seniority_level}")
-        print(f"Title: {title}")
-        print(f"Education: {education[:100]}...")
-        
         # Generate member ID
         member_id = f"m_{hashlib.md5(file_content).hexdigest()[:8]}"
         
-        # Store in Redis with expiration
-        redis_key = f"cv:{session_id}:{member_id}"
+        # Store in storage
+        cv_key = f"cv:{session_id}:{member_id}"
         cv_data = {
             "cv_text": text,
             "skills": skills,
@@ -233,18 +385,14 @@ async def upload_cv(
             "uploaded_at": datetime.now().isoformat()
         }
         
-        redis_client.setex(
-            redis_key,
-            timedelta(hours=1),  # Expire after 1 hour
-            json.dumps(cv_data)
-        )
+        store_data(cv_key, cv_data)
         
         # Create member object and add to graph
         member = Member(
             member_id=member_id,
             cv_text=text,
             skills=skills,
-            title=title,
+            title=title or "Not specified",
             experience_years=experience_years,
             seniority_level=seniority_level,
             location="Remote"
@@ -259,171 +407,310 @@ async def upload_cv(
             experience_years=experience_years,
             seniority_level=seniority_level,
             title=title,
-            location="Remote"
+            location="Remote",
+            education=education
         )
     
     except Exception as e:
-        print(f"Error in upload_cv: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/parse_cv_direct", response_model=CVParseResponse)
-async def parse_cv_direct(
-    session_id: str,
-    cv_text: str
-):
-    """Parse CV text directly without file upload"""
-    try:
-        skills = extract_skills(cv_text)
-        experience_years = extract_experience_years(cv_text)
-        seniority_level = determine_seniority_level(experience_years)
-        title = extract_title(cv_text)
-        member_id = f"m_{hashlib.md5(cv_text.encode()).hexdigest()[:8]}"
-        redis_key = f"cv:{session_id}:{member_id}"
-        cv_data = {
-            "cv_text": cv_text,
-            "skills": skills,
-            "experience_years": experience_years,
-            "seniority_level": seniority_level,
-            "title": title,
-            "uploaded_at": datetime.now().isoformat()
-        }
-        redis_client.setex(
-            redis_key,
-            timedelta(hours=1),
-            json.dumps(cv_data)
-        )
-        member = Member(
-            member_id=member_id,
-            cv_text=cv_text,
-            skills=skills,
-            title=title,
-            experience_years=experience_years,
-            seniority_level=seniority_level,
-            location="Remote"
-        )
-        matcher.graph.add_member_node(member)
-        return CVParseResponse(
-            member_id=member_id,
-            extracted_text=cv_text[:500] + "..." if len(cv_text) > 500 else cv_text,
-            skills=skills,
-            experience_years=experience_years,
-            seniority_level=seniority_level,
-            title=title,
-            location="Remote"
-        )
-    except Exception as e:
-        logger.error(f"Direct parse error: {str(e)}")
+        logger.error(f"Error in upload_cv: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/match_jobs", response_model=JobMatchResponse)
 async def match_jobs(request: JobMatchRequest):
     """Get job matches with enhanced matching logic"""
     try:
-        # Check if we have any jobs loaded
-        job_count = len(matcher.graph.nodes.get('job', {}))
+        # Initialize graph nodes if not exists
+        if 'job' not in matcher.graph.nodes:
+            matcher.graph.nodes['job'] = {}
+        if 'member' not in matcher.graph.nodes:
+            matcher.graph.nodes['member'] = {}
         
-        # If no jobs, try to sync from Spring Boot
+        # Check current job count
+        job_count = len(matcher.graph.nodes.get('job', {}))
+        logger.info(f"Current jobs in graph: {job_count}")
+        
+        # Always try to sync jobs from Spring Boot
         if job_count == 0:
-            print("No jobs in graph, syncing from Spring Boot...")
+            logger.info("No jobs in graph, syncing from Spring Boot...")
             spring_jobs = fetch_jobs_from_spring_boot()
             for job in spring_jobs:
                 matcher.graph.add_job_node(job)
+            job_count = len(matcher.graph.nodes.get('job', {}))
+            logger.info(f"After sync, jobs in graph: {job_count}")
         
-        # Retrieve CV data from Redis
-        redis_key = f"cv:{request.session_id}:{request.member_id}"
-        cv_data = redis_client.get(redis_key)
+        # Retrieve CV data
+        cv_key = f"cv:{request.session_id}:{request.member_id}"
+        cv_data = retrieve_data(cv_key)
         
         if not cv_data:
             raise HTTPException(status_code=404, detail="CV not found in session")
         
-        cv_info = json.loads(cv_data)
+        logger.info(f"Processing match request for member {request.member_id}")
+        logger.info(f"CV Skills: {cv_data['skills'][:5]}...")
+        logger.info(f"Experience: {cv_data['experience_years']} years, Level: {cv_data['seniority_level']}")
         
-        # Create Member object with enhanced data
+        # Create Member object
         member = Member(
             member_id=request.member_id,
-            cv_text=cv_info["cv_text"],
-            skills=cv_info["skills"],
-            title=cv_info.get("title", "Not specified"),
-            experience_years=cv_info["experience_years"],
-            seniority_level=cv_info["seniority_level"],
+            cv_text=cv_data["cv_text"],
+            skills=cv_data["skills"],
+            title=cv_data.get("title", "Not specified"),
+            experience_years=cv_data["experience_years"],
+            seniority_level=cv_data["seniority_level"],
             location="Remote"
         )
         
-        # Add member to matcher graph temporarily
+        # Ensure member is in graph
         matcher.graph.add_member_node(member)
         
-        # Add the enhanced matching method to the matcher
-        matcher.get_recommendations_enhanced = get_recommendations_enhanced.__get__(matcher, ImprovedJobMatcher)
-        
-        # Get recommendations with enhanced logic
-        recommendations = matcher.get_recommendations_enhanced(
-            request.member_id,
-            top_k=request.top_k,
-            mode=request.mode
-        )
-        
-        # Log matching results
-        print(f"Matching mode: {request.mode}")
-        print(f"Found {len(recommendations)} matches")
-        if recommendations:
-            print(f"Top match: {recommendations[0]['title']} - Score: {recommendations[0]['score']:.2f}")
-        
-        # Format response
+        # Get all jobs and calculate match scores
+        jobs = list(matcher.graph.nodes.get('job', {}).values())
         matches = []
-        for rec in recommendations:
-            matches.append({
-                "job_id": rec['job_id'],
-                "title": rec['title'],
-                "company": rec['company'],
-                "location": rec['location'],
-                "required_skills": rec['required_skills'],
-                "preferred_skills": rec.get('preferred_skills', []),
-                "experience_required": rec['experience_required'],
-                "seniority_level": rec['seniority_level'],
-                "score": rec['score'],
-                "match_details": rec.get('match_details', {})
-            })
+        
+        for job in jobs:
+            score = calculate_enhanced_match_score(member, job, request.mode)
+            
+            # Log detailed matching for debugging
+            if score > 0:
+                logger.debug(f"Job {job.job_id} - {job.title}: Score = {score}")
+            
+            # Include all jobs with score > 0
+            if score > 0:
+                match_details = calculate_match_details(member, job)
+                matches.append({
+                    "job_id": job.job_id,
+                    "title": job.title,
+                    "company": job.company,
+                    "location": job.location,
+                    "required_skills": job.required_skills,
+                    "preferred_skills": job.preferred_skills,
+                    "experience_required": job.experience_required,
+                    "seniority_level": job.seniority_level,
+                    "score": round(score, 3),
+                    "match_details": match_details
+                })
+        
+        # Sort by score descending
+        matches.sort(key=lambda x: x['score'], reverse=True)
+        top_matches = matches[:request.top_k]
+        
+        logger.info(f"Found {len(matches)} total matches, returning top {len(top_matches)}")
         
         return JobMatchResponse(
-            matches=matches,
+            matches=top_matches,
             total_matches=len(matches)
         )
     
     except Exception as e:
-        print(f"Error in match_jobs: {str(e)}")
+        logger.error(f"Error in match_jobs: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/test_extraction")
-async def test_extraction(text: str):
-    """Test the extraction functions with raw text"""
-    try:
-        skills = extract_skills_enhanced(text)
-        experience = extract_experience_years_enhanced(text)
-        seniority = determine_seniority_level_enhanced(experience, text)
-        title = extract_title(text)
-        education = extract_education(text)
+def calculate_enhanced_match_score(member: Member, job: Job, mode: str) -> float:
+    """Enhanced match score calculation with better skill matching"""
+    score = 0.0
+    
+    # Normalize skills for comparison
+    member_skills_normalized = normalize_skills(member.skills)
+    job_skills_normalized = normalize_skills(job.required_skills)
+    
+    # 1. Skill Matching (40% weight)
+    if job_skills_normalized:
+        # Direct matches
+        direct_matches = len(member_skills_normalized & job_skills_normalized)
         
-        return {
-            "skills": skills,
-            "skill_count": len(skills),
-            "experience_years": experience,
-            "seniority_level": seniority,
-            "title": title,
-            "education": education
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Fuzzy matches (e.g., "js" matches "javascript")
+        fuzzy_matches = count_fuzzy_skill_matches(member_skills_normalized, job_skills_normalized)
+        
+        total_matches = direct_matches + (fuzzy_matches * 0.5)
+        skill_match_ratio = min(total_matches / len(job_skills_normalized), 1.0)
+        score += skill_match_ratio * 0.4
+    else:
+        # If no required skills specified, give partial credit
+        score += 0.2
+    
+    # 2. Experience Matching (30% weight)
+    exp_diff = abs(member.experience_years - job.experience_required)
+    
+    if mode == "graduate_friendly":
+        # More lenient for graduates
+        if member.experience_years <= 1:
+            if job.experience_required <= 3:
+                score += 0.3
+            elif job.experience_required <= 5:
+                score += 0.2
+            else:
+                score += 0.1
+        else:
+            # Standard experience matching
+            if exp_diff == 0:
+                score += 0.3
+            elif exp_diff <= 1:
+                score += 0.25
+            elif exp_diff <= 2:
+                score += 0.2
+            elif exp_diff <= 3:
+                score += 0.1
+    elif mode == "flexible":
+        # Flexible matching allows more deviation
+        if exp_diff == 0:
+            score += 0.3
+        elif exp_diff <= 2:
+            score += 0.25
+        elif exp_diff <= 4:
+            score += 0.15
+        else:
+            score += 0.05
+    else:  # strict mode
+        # Strict matching requires close experience match
+        if exp_diff == 0:
+            score += 0.3
+        elif exp_diff <= 1:
+            score += 0.2
+        elif exp_diff <= 2:
+            score += 0.1
+    
+    # 3. Seniority Level Matching (20% weight)
+    seniority_score = calculate_seniority_match(member.seniority_level, job.seniority_level, mode)
+    score += seniority_score * 0.2
+    
+    # 4. Title Similarity (10% weight)
+    if member.title and job.title and member.title != "Not specified":
+        title_score = calculate_title_similarity(member.title, job.title)
+        score += title_score * 0.1
+    
+    # Ensure minimum score for any skill match
+    if score < 0.1 and len(member_skills_normalized & job_skills_normalized) > 0:
+        score = 0.1
+    
+    return min(score, 1.0)
 
-# Update the health endpoint to show more info
+def normalize_skills(skills: List[str]) -> set:
+    """Normalize skills for better matching"""
+    normalized = set()
+    for skill in skills:
+        skill_lower = skill.lower().strip()
+        # Map variations to canonical form
+        if skill_lower in SKILL_VARIATIONS:
+            normalized.add(SKILL_VARIATIONS[skill_lower])
+        else:
+            normalized.add(skill_lower)
+    return normalized
+
+def count_fuzzy_skill_matches(member_skills: set, job_skills: set) -> int:
+    """Count fuzzy matches between skill sets"""
+    fuzzy_count = 0
+    
+    # Common abbreviations and variations
+    skill_mappings = {
+        'js': 'javascript',
+        'ts': 'typescript',
+        'py': 'python',
+        'node': 'nodejs',
+        'node.js': 'nodejs',
+        'react.js': 'react',
+        'vue.js': 'vue',
+        'angular.js': 'angular',
+        'postgres': 'postgresql',
+        'mongo': 'mongodb'
+    }
+    
+    for member_skill in member_skills:
+        for job_skill in job_skills:
+            # Check if one is abbreviation of other
+            if member_skill in skill_mappings and skill_mappings[member_skill] == job_skill:
+                fuzzy_count += 1
+            elif job_skill in skill_mappings and skill_mappings[job_skill] == member_skill:
+                fuzzy_count += 1
+            # Check if one contains the other
+            elif len(member_skill) > 3 and len(job_skill) > 3:
+                if member_skill in job_skill or job_skill in member_skill:
+                    fuzzy_count += 1
+    
+    return fuzzy_count
+
+def calculate_seniority_match(member_level: str, job_level: str, mode: str) -> float:
+    """Calculate seniority level match score"""
+    level_map = {
+        "entry": 0,
+        "junior": 1,
+        "mid": 2,
+        "senior": 3,
+        "lead": 4,
+        "principal": 5
+    }
+    
+    member_num = level_map.get(member_level, 0)
+    job_num = level_map.get(job_level, 0)
+    diff = abs(member_num - job_num)
+    
+    if mode == "strict":
+        return 1.0 if diff == 0 else 0.0
+    elif mode == "flexible":
+        if diff == 0:
+            return 1.0
+        elif diff == 1:
+            return 0.7
+        elif diff == 2:
+            return 0.3
+        else:
+            return 0.0
+    else:  # graduate_friendly
+        if member_num <= 1:  # entry or junior
+            if job_num <= 2:  # entry, junior, or mid
+                return 1.0
+            elif job_num == 3:  # senior
+                return 0.5
+            else:
+                return 0.2
+        else:
+            return 1.0 if diff <= 1 else 0.5 if diff == 2 else 0.0
+
+def calculate_title_similarity(member_title: str, job_title: str) -> float:
+    """Calculate similarity between job titles"""
+    member_words = set(member_title.lower().split())
+    job_words = set(job_title.lower().split())
+    
+    # Remove common words
+    common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for'}
+    member_words -= common_words
+    job_words -= common_words
+    
+    if not member_words or not job_words:
+        return 0.0
+    
+    # Calculate Jaccard similarity
+    intersection = len(member_words & job_words)
+    union = len(member_words | job_words)
+    
+    return intersection / union if union > 0 else 0.0
+
+def calculate_match_details(member: Member, job: Job) -> dict:
+    """Calculate detailed match information"""
+    member_skills_normalized = normalize_skills(member.skills)
+    job_skills_normalized = normalize_skills(job.required_skills)
+    
+    matched_skills = list(member_skills_normalized & job_skills_normalized)
+    missing_skills = list(job_skills_normalized - member_skills_normalized)
+    
+    return {
+        "skill_match": len(matched_skills),
+        "total_required_skills": len(job_skills_normalized),
+        "matched_skills": matched_skills[:10],  # Limit for response size
+        "missing_skills": missing_skills[:5],   # Show top missing skills
+        "experience_diff": member.experience_years - job.experience_required,
+        "experience_match": "exact" if member.experience_years == job.experience_required 
+                          else "over" if member.experience_years > job.experience_required 
+                          else "under",
+        "seniority_match": member.seniority_level == job.seniority_level
+    }
+
 @app.get("/health")
 async def health():
     """Health check with system info"""
     job_count = len(matcher.graph.nodes.get('job', {}))
     member_count = len(matcher.graph.nodes.get('member', {}))
-    
-    # Get sample skills to verify database is loaded
-    
-    sample_skills = list(SKILL_VARIATIONS.keys())[:10]
     
     return {
         "status": "healthy",
@@ -431,225 +718,124 @@ async def health():
         "members_count": member_count,
         "skill_database_loaded": len(SKILL_VARIATIONS) > 0,
         "total_skills": len(SKILL_VARIATIONS),
-        "sample_skills": sample_skills,
+        "redis_connected": redis_client is not None,
         "matching_modes": ["strict", "flexible", "graduate_friendly"],
         "extraction_enhanced": True
-    }
-
-def calculate_match_score(member: Member, job: Job, mode: str) -> float:
-    """Calculate match score between member and job"""
-    score = 0.0
-    member_skills = set(skill.lower() for skill in member.skills)
-    job_skills = set(skill.lower() for skill in job.required_skills)
-    if job_skills:
-        skill_match = len(member_skills & job_skills) / len(job_skills)
-        score += skill_match * 0.4
-    else:
-        score += 0.2
-    exp_diff = abs(member.experience_years - job.experience_required)
-    if mode == "graduate_friendly" and member.experience_years <= 1:
-        if job.experience_required <= 2:
-            score += 0.3
-        elif job.experience_required <= 3:
-            score += 0.2
-        else:
-            score += 0.1
-    else:
-        if exp_diff == 0:
-            score += 0.3
-        elif exp_diff <= 1:
-            score += 0.25
-        elif exp_diff <= 2:
-            score += 0.15
-        elif exp_diff <= 3:
-            score += 0.05
-    if mode == "strict":
-        if member.seniority_level == job.seniority_level:
-            score += 0.2
-    elif mode == "flexible":
-        level_map = {"entry": 0, "junior": 1, "mid": 2, "senior": 3}
-        member_level = level_map.get(member.seniority_level, 0)
-        job_level = level_map.get(job.seniority_level, 0)
-        if abs(member_level - job_level) <= 1:
-            score += 0.2
-    else:
-        if member.seniority_level in ["entry", "junior"]:
-            if job.seniority_level in ["entry", "junior", "mid"]:
-                score += 0.2
-        else:
-            score += 0.2
-    if member.title and job.title:
-        title_similarity = len(set(member.title.lower().split()) & set(job.title.lower().split()))
-        if title_similarity > 0:
-            score += 0.1
-    if score == 0 and len(member_skills & job_skills) > 0:
-        score = 0.1
-    return min(score, 1.0)
-
-@app.get("/test_matching/{member_id}")
-async def test_matching(member_id: str):
-    """Debug endpoint to test matching"""
-    try:
-        member = None
-        for m in matcher.graph.nodes.get('member', {}).values():
-            if m.member_id == member_id:
-                member = m
-                break
-        if not member:
-            return {"error": "Member not found"}
-        jobs = list(matcher.graph.nodes.get('job', {}).values())
-        results = {
-            "member": {
-                "id": member.member_id,
-                "skills": member.skills,
-                "experience": member.experience_years,
-                "seniority": member.seniority_level
-            },
-            "available_jobs": len(jobs),
-            "sample_scores": []
-        }
-        for job in jobs[:5]:
-            for mode in ["strict", "flexible", "graduate_friendly"]:
-                score = calculate_match_score(member, job, mode)
-                results["sample_scores"].append({
-                    "job_id": job.job_id,
-                    "title": job.title,
-                    "mode": mode,
-                    "score": score
-                })
-        return results
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.post("/add_job")
-async def add_job(job: JobData):
-    """Add a new job to the matching system"""
-    try:
-        new_job = Job(
-            job_id=job.job_id,
-            title=job.title,
-            description=job.description,
-            company=job.company,
-            required_skills=job.required_skills,
-            preferred_skills=job.preferred_skills,
-            experience_required=job.experience_required,
-            location=job.location,
-            seniority_level=job.seniority_level
-        )
-        matcher.graph.add_job_node(new_job)
-        return {"status": "success", "job_id": job.job_id}
-    except Exception as e:
-        logger.error(f"Add job error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/train_model")
-async def train_model():
-    """Retrain the GNN model with current data"""
-    try:
-        members = list(matcher.graph.nodes['member'].values())
-        jobs = list(matcher.graph.nodes['job'].values())
-        if len(members) < 5 or len(jobs) < 5:
-            return {"status": "skipped", "message": "Not enough data for training"}
-        asyncio.create_task(train_model_async(members, jobs))
-        return {"status": "training_started"}
-    except Exception as e:
-        logger.error(f"Train model error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-async def train_model_async(members, jobs):
-    """Async model training"""
-    matcher.train(members, jobs, epochs=20, batch_size=8)
-    torch.save({
-        'model_state_dict': matcher.model.state_dict(),
-        'graph_data': matcher.graph.to_pyg_data()
-    }, 'job_matcher_model.pth')
-
-@app.post("/sync_jobs_from_spring")
-async def sync_jobs_from_spring():
-    """Fetch jobs from Spring Boot and add to ML service"""
-    try:
-        response = requests.get('http://localhost:8080/api/jobs')
-        response.raise_for_status()
-        jobs = response.json()
-        matcher.graph.nodes['job'].clear()
-        for job_data in jobs:
-            job = Job(
-                job_id=str(job_data['id']),
-                title=job_data['title'],
-                description=job_data['description'],
-                company=job_data['company'],
-                required_skills=extract_skills_from_description(job_data['description']),
-                preferred_skills=[],
-                experience_required=job_data.get('experienceRequired', 2),
-                location=job_data['location'],
-                seniority_level=determine_seniority_level(job_data.get('experienceRequired', 2))
-            )
-            matcher.graph.add_job_node(job)
-        return {"status": "success", "jobs_synced": len(jobs)}
-    except Exception as e:
-        logger.error(f"Sync jobs from Spring error: {str(e)}")
-        return {"status": "error", "message": str(e)}
-
-@app.get("/loaded_jobs")
-async def get_loaded_jobs():
-    """Get list of currently loaded jobs"""
-    jobs = []
-    for job_id, job in matcher.graph.nodes.get('job', {}).items():
-        jobs.append({
-            "job_id": job.job_id,
-            "title": job.title,
-            "company": job.company,
-            "location": job.location,
-            "skills": job.required_skills
-        })
-    return {
-        "total": len(jobs),
-        "jobs": jobs
     }
 
 @app.post("/sync_jobs")
 async def sync_jobs():
     """Manually sync jobs from Spring Boot"""
     try:
-        if 'job' in matcher.graph.nodes:
+        # Clear existing jobs
+        if 'job' not in matcher.graph.nodes:
+            matcher.graph.nodes['job'] = {}
+        else:
             matcher.graph.nodes['job'].clear()
+        
+        # Fetch new jobs
+        spring_jobs = fetch_jobs_from_spring_boot()
+        
+        if not spring_jobs:
+            logger.warning("No jobs fetched from Spring Boot")
+            return {
+                "status": "warning",
+                "message": "No jobs found in Spring Boot",
+                "jobs_synced": 0
+            }
+        
+        # Add jobs to graph
+        for job in spring_jobs:
+            matcher.graph.add_job_node(job)
+            logger.info(f"Added job: {job.title} (ID: {job.job_id}, Skills: {len(job.required_skills)})")
+        
+        return {
+            "status": "success",
+            "message": f"Synced {len(spring_jobs)} jobs from Spring Boot",
+            "jobs_synced": len(spring_jobs),
+            "jobs": [{"id": job.job_id, "title": job.title, "skills": job.required_skills} for job in spring_jobs]
+        }
+    except Exception as e:
+        logger.error(f"Sync error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/debug/jobs")
+async def debug_jobs():
+    """Debug endpoint to see what jobs are loaded"""
+    ensure_graph_initialized()
+    
+    jobs = list(matcher.graph.nodes.get('job', {}).values())
+    return {
+        "total_jobs": len(jobs),
+        "jobs": [
+            {
+                "job_id": job.job_id,
+                "title": job.title,
+                "company": job.company,
+                "skills": job.required_skills,
+                "experience": job.experience_required,
+                "seniority": job.seniority_level
+            }
+            for job in jobs[:10]  # Show first 10 jobs
+        ]
+    }
+
+
+@app.post("/reload_jobs")
+async def reload_jobs():
+    """Force reload all jobs from Spring Boot"""
+    ensure_graph_initialized()
+    
+    # Clear existing jobs
+    matcher.graph.nodes['job'].clear()
+    
+    # Fetch and load new jobs
+    jobs = fetch_jobs_from_spring_boot()
+    
+    if jobs:
+        for job in jobs:
+            matcher.graph.add_job_node(job)
+        
+        return {
+            "status": "success",
+            "message": f"Reloaded {len(jobs)} jobs",
+            "jobs_count": len(jobs)
+        }
+    else:
+        return {
+            "status": "error",
+            "message": "No jobs could be loaded from Spring Boot",
+            "jobs_count": 0
+        }
+
+@app.on_event("startup")
+async def startup_event():
+    """Load jobs on startup"""
+    logger.info("Starting ML Service...")
+    
+    # Initialize graph nodes
+    if not hasattr(matcher.graph, 'nodes'):
+        matcher.graph.nodes = {}
+    if 'job' not in matcher.graph.nodes:
+        matcher.graph.nodes['job'] = {}
+    if 'member' not in matcher.graph.nodes:
+        matcher.graph.nodes['member'] = {}
+    
+    # Load jobs
+    try:
         spring_jobs = fetch_jobs_from_spring_boot()
         if spring_jobs:
             for job in spring_jobs:
                 matcher.graph.add_job_node(job)
-            return {
-                "status": "success",
-                "message": f"Synced {len(spring_jobs)} jobs from Spring Boot",
-                "jobs": [{"id": job.job_id, "title": job.title} for job in spring_jobs]
-            }
+            logger.info(f"Loaded {len(spring_jobs)} jobs on startup")
         else:
-            return {
-                "status": "warning",
-                "message": "No jobs found in Spring Boot",
-                "jobs": []
-            }
+            logger.warning("No jobs loaded on startup - Spring Boot may not be running")
     except Exception as e:
-        logger.error(f"Manual sync jobs error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to load jobs on startup: {e}")
 
-@app.on_event("startup")
-async def startup_event():
-    """Load saved model and fetch jobs from Spring Boot on startup"""
-    try:
-        checkpoint = torch.load('job_matcher_model.pth', map_location=matcher.device)
-        matcher.model.load_state_dict(checkpoint['model_state_dict'])
-        logger.info("Loaded saved model")
-    except:
-        logger.info("No saved model found, starting fresh")
-    logger.info("Fetching jobs from Spring Boot...")
-    spring_jobs = fetch_jobs_from_spring_boot()
-    if spring_jobs:
-        logger.info(f"Loading {len(spring_jobs)} jobs from Spring Boot")
-        for job in spring_jobs:
-            matcher.graph.add_job_node(job)
-            logger.info(f"Added job: {job.title} (ID: {job.job_id})")
-    else:
-        logger.warning("No jobs fetched from Spring Boot")
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

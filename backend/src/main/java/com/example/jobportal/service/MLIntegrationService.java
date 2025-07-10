@@ -1,246 +1,237 @@
 package com.example.jobportal.service;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
-
 import com.example.jobportal.model.Job;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-
 @Service
-@Slf4j
-@RequiredArgsConstructor
 public class MLIntegrationService {
-
-    private final RestTemplate restTemplate;
-    private final RedisTemplate<String, Object> redisTemplate;
-    private final ObjectMapper objectMapper;
     
-    @Value("${ml.service.url:http://localhost:8000}")
+    @Value("${ml-service.url:http://localhost:8000}")
     private String mlServiceUrl;
-
-    // DTOs for ML Service Communication
+    
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    
+    // Response classes
     public static class CVParseResponse {
-        public String memberId;
-        public String extractedText;
-        public List<String> skills;
-        public int experienceYears;
-        public String seniorityLevel;
-        public String title;
-        public String location;
+        private String memberId;
+        private String extractedText;
+        private List<String> skills;
+        private int experienceYears;
+        private String seniorityLevel;
+        private String title;
+        private String location;
+        private String education;
+        
+        // Getters and setters
+        public String getMemberId() { return memberId; }
+        public void setMemberId(String memberId) { this.memberId = memberId; }
+        
+        public String getExtractedText() { return extractedText; }
+        public void setExtractedText(String extractedText) { this.extractedText = extractedText; }
+        
+        public List<String> getSkills() { return skills; }
+        public void setSkills(List<String> skills) { this.skills = skills; }
+        
+        public int getExperienceYears() { return experienceYears; }
+        public void setExperienceYears(int experienceYears) { this.experienceYears = experienceYears; }
+        
+        public String getSeniorityLevel() { return seniorityLevel; }
+        public void setSeniorityLevel(String seniorityLevel) { this.seniorityLevel = seniorityLevel; }
+        
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
+        
+        public String getLocation() { return location; }
+        public void setLocation(String location) { this.location = location; }
+        
+        public String getEducation() { return education; }
+        public void setEducation(String education) { this.education = education; }
     }
-
-    public static class JobMatchRequest {
-        public String sessionId;
-        public String memberId;
-        public String mode = "graduate_friendly";
-        public int topK = 10;
-    }
-
-    public static class JobMatch {
-        public String jobId;
-        public String title;
-        public String company;
-        public String description;
-        public List<String> requiredSkills;
-        public int experienceRequired;
-        public String location;
-        public String seniorityLevel;
-        public double matchScore;
-        public String matchQuality;
-    }
-
+    
     public static class JobMatchResponse {
-        public List<JobMatch> matches;
-        public int totalMatches;
+        private List<Map<String, Object>> matches;
+        private int totalMatches;
+        
+        // Getters and setters
+        public List<Map<String, Object>> getMatches() { return matches; }
+        public void setMatches(List<Map<String, Object>> matches) { this.matches = matches; }
+        
+        public int getTotalMatches() { return totalMatches; }
+        public void setTotalMatches(int totalMatches) { this.totalMatches = totalMatches; }
     }
-
+    
     /**
-     * Parse uploaded CV using ML service
+     * Upload CV to ML service for parsing and analysis
      */
-    public CVParseResponse parseCv(MultipartFile file, String sessionId) throws IOException {
-        // Create multipart request
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-        
-        // Build form data
-        LinkedMultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("file", new MultipartInputStreamFileResource(
-            file.getInputStream(), file.getOriginalFilename()
-        ));
-        body.add("session_id", sessionId);
-        
-        HttpEntity<LinkedMultiValueMap<String, Object>> requestEntity = 
-            new HttpEntity<>(body, headers);
-        
+    public CVParseResponse uploadCVToMLService(MultipartFile file, String sessionId) throws Exception {
         try {
-            ResponseEntity<CVParseResponse> response = restTemplate.exchange(
-                mlServiceUrl + "/parse_cv",
-                HttpMethod.POST,
-                requestEntity,
-                CVParseResponse.class
-            );
+            // Prepare multipart request
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             
-            if (response.getStatusCode() == HttpStatus.OK) {
-                CVParseResponse cvData = response.getBody();
-                
-                // Store parsed CV data in Redis for session
-                String redisKey = "cv:session:" + sessionId;
-                redisTemplate.opsForValue().set(
-                    redisKey, 
-                    cvData, 
-                    30, 
-                    TimeUnit.MINUTES
-                );
-                
-                return cvData;
-            }
-        } catch (Exception e) {
-            log.error("Error parsing CV: ", e);
-            throw new RuntimeException("Failed to parse CV", e);
-        }
-        
-        return null;
-    }
-
-    /**
-     * Get job matches for parsed CV
-     */
-    public JobMatchResponse getJobMatches(String sessionId, String memberId, 
-                                         String mode, int topK) {
-        JobMatchRequest request = new JobMatchRequest();
-        request.sessionId = sessionId;
-        request.memberId = memberId;
-        request.mode = mode != null ? mode : "graduate_friendly";
-        request.topK = topK > 0 ? topK : 10;
-        
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        
-        HttpEntity<JobMatchRequest> requestEntity = new HttpEntity<>(request, headers);
-        
-        try {
-            ResponseEntity<JobMatchResponse> response = restTemplate.exchange(
-                mlServiceUrl + "/match_jobs",
-                HttpMethod.POST,
-                requestEntity,
-                JobMatchResponse.class
-            );
+            // Add file
+            body.add("file", new ByteArrayResource(file.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return file.getOriginalFilename();
+                }
+            });
             
-            if (response.getStatusCode() == HttpStatus.OK) {
-                JobMatchResponse matches = response.getBody();
-                
-                // Cache results in Redis
-                String cacheKey = "matches:" + sessionId + ":" + memberId;
-                redisTemplate.opsForValue().set(
-                    cacheKey,
-                    matches,
-                    30,
-                    TimeUnit.MINUTES
-                );
-                
-                return matches;
-            }
-        } catch (Exception e) {
-            log.error("Error getting job matches: ", e);
-            throw new RuntimeException("Failed to get job matches", e);
-        }
-        
-        return new JobMatchResponse();
-    }
-
-    /**
-     * Sync job to ML service when new job is posted
-     */
-    public void syncJobToMLService(Job job) {
-        Map<String, Object> jobData = new HashMap<>();
-        jobData.put("job_id", job.getId().toString());
-        jobData.put("title", job.getTitle());
-        jobData.put("description", job.getDescription());
-        jobData.put("company", jobData.put("company", job.getPostedByCompany()));
-        jobData.put("required_skills", parseSkills(job.getRequiredSkills()));
-        jobData.put("preferred_skills", parseSkills(job.getPreferredSkills()));
-        jobData.put("experience_required", job.getExperienceRequired());
-        jobData.put("location", job.getLocation());
-        jobData.put("seniority_level", job.getSeniorityLevel());
-        
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        
-        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(jobData, headers);
-        
-        try {
-            restTemplate.exchange(
-                mlServiceUrl + "/add_job",
+            // Add session ID
+            body.add("session_id", sessionId);
+            
+            // Set headers
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            
+            // Create request
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = 
+                new HttpEntity<>(body, headers);
+            
+            // Send request
+            ResponseEntity<Map> response = restTemplate.exchange(
+                mlServiceUrl + "/upload_cv",
                 HttpMethod.POST,
                 requestEntity,
                 Map.class
             );
-            log.info("Synced job {} to ML service", job.getId());
+            
+            // Parse response
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                CVParseResponse cvResponse = new CVParseResponse();
+                Map<String, Object> responseBody = response.getBody();
+                
+                cvResponse.setMemberId((String) responseBody.get("member_id"));
+                cvResponse.setExtractedText((String) responseBody.get("extracted_text"));
+                cvResponse.setSkills((List<String>) responseBody.get("skills"));
+                cvResponse.setExperienceYears((Integer) responseBody.get("experience_years"));
+                cvResponse.setSeniorityLevel((String) responseBody.get("seniority_level"));
+                cvResponse.setTitle((String) responseBody.get("title"));
+                cvResponse.setLocation((String) responseBody.get("location"));
+                cvResponse.setEducation((String) responseBody.get("education"));
+                
+                return cvResponse;
+            } else {
+                throw new Exception("Failed to upload CV to ML service");
+            }
+            
         } catch (Exception e) {
-            log.error("Error syncing job to ML service: ", e);
+            System.err.println("Error uploading CV to ML service: " + e.getMessage());
+            e.printStackTrace();
+            throw new Exception("Failed to upload CV: " + e.getMessage());
         }
     }
     
     /**
-     * Clear CV data on session end
+     * Get job matches from ML service
+     */
+    public JobMatchResponse getJobMatches(String sessionId, String memberId, String mode, int limit) throws Exception {
+        try {
+            // Prepare request body
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("session_id", sessionId);
+            requestBody.put("member_id", memberId);
+            requestBody.put("mode", mode);
+            requestBody.put("top_k", limit);
+            
+            // Set headers
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            
+            // Create request
+            HttpEntity<Map<String, Object>> requestEntity = 
+                new HttpEntity<>(requestBody, headers);
+            
+            // Send request
+            ResponseEntity<Map> response = restTemplate.exchange(
+                mlServiceUrl + "/match_jobs",
+                HttpMethod.POST,
+                requestEntity,
+                Map.class
+            );
+            
+            // Parse response
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                JobMatchResponse matchResponse = new JobMatchResponse();
+                Map<String, Object> responseBody = response.getBody();
+                
+                matchResponse.setMatches((List<Map<String, Object>>) responseBody.get("matches"));
+                matchResponse.setTotalMatches((Integer) responseBody.get("total_matches"));
+                
+                return matchResponse;
+            } else {
+                throw new Exception("Failed to get job matches from ML service");
+            }
+            
+        } catch (Exception e) {
+            System.err.println("Error getting job matches from ML service: " + e.getMessage());
+            e.printStackTrace();
+            throw new Exception("Failed to get job matches: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Clear session CV data (note: actual cleanup happens on ML service side)
      */
     public void clearSessionCVData(String sessionId) {
-        String pattern = "cv:session:" + sessionId + "*";
-        Set<String> keys = redisTemplate.keys(pattern);
-        if (keys != null && !keys.isEmpty()) {
-            redisTemplate.delete(keys);
-            log.info("Cleared CV data for session: {}", sessionId);
+        // The ML service handles cleanup based on Redis TTL
+        // This is just a placeholder for any additional cleanup if needed
+        System.out.println("CV data cleared for session: " + sessionId);
+    }
+    
+    /**
+     * Check ML service health
+     */
+    public boolean checkMLServiceHealth() {
+        try {
+            ResponseEntity<Map> response = restTemplate.getForEntity(
+                mlServiceUrl + "/health",
+                Map.class
+            );
+            
+            return response.getStatusCode().is2xxSuccessful();
+        } catch (Exception e) {
+            System.err.println("ML service health check failed: " + e.getMessage());
+            return false;
         }
     }
     
-    private List<String> parseSkills(String skills) {
-        if (skills == null || skills.isEmpty()) {
-            return new ArrayList<>();
-        }
-        return Arrays.asList(skills.split(",\\s*"));
-    }
-    
-    // Helper class for multipart file upload
-    private static class MultipartInputStreamFileResource 
-            extends org.springframework.core.io.InputStreamResource {
-        private final String filename;
+    /**
+     * Sync jobs to ML service
+     */
+    public void syncJobToMLService(Job job) {
+       try {
+           HttpHeaders headers = new HttpHeaders();
+           headers.setContentType(MediaType.APPLICATION_JSON);
 
-        public MultipartInputStreamFileResource(InputStream inputStream, String filename) {
-            super(inputStream);
-            this.filename = filename;
-        }
+           HttpEntity<Job> requestEntity = new HttpEntity<>(job, headers);
 
-        @Override
-        public String getFilename() {
-            return this.filename;
-        }
-
-        @Override
-        public long contentLength() throws IOException {
-            return -1; // Unknown length
-        }
+           restTemplate.exchange(
+               mlServiceUrl + "/sync_jobs",
+               HttpMethod.POST,
+               requestEntity,
+               Void.class
+           );
+       } catch (RestClientException e) {
+           e.printStackTrace();
+       }
     }
 }

@@ -1,104 +1,109 @@
-import { useNavigate } from 'react-router-dom'; // Import the useNavigate hook
-import { AlertCircle, Award, Briefcase, Clock, FileText, MapPin, TrendingUp, Upload, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { Briefcase, Upload, FileText, CheckCircle } from 'lucide-react';
+import './JobMatchingDashboard.css';
 
 const JobMatchingDashboard = () => {
-  const navigate = useNavigate(); // Initialize navigate function from React Router
-
+  const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
   const [file, setFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
   const [cvData, setCvData] = useState(null);
   const [jobMatches, setJobMatches] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [matchMode, setMatchMode] = useState('graduate_friendly');
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [sessionId, setSessionId] = useState(`session-${Date.now()}`);
+  const [matchMode, setMatchMode] = useState('graduate_friendly');
+  const [sessionId] = useState(() => {
+    // Get or create session ID
+    let id = sessionStorage.getItem('ml_session_id');
+    if (!id) {
+      id = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      sessionStorage.setItem('ml_session_id', id);
+    }
+    return id;
+  });
 
-  // Check authentication on component mount
+  // Redirect if not authenticated
   useEffect(() => {
-    checkAuthentication();
-  }, []);
-
-  const checkAuthentication = () => {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    setIsAuthenticated(!!token);
-
-    if (!token) {
-      setError('Please login to use CV matching features');
-    }
-  };
-
-  // Get auth headers
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    return {
-      'Authorization': `Bearer ${token}`
-    };
-  };
-
-  // Handle file drop
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && isValidFile(droppedFile)) {
-      setFile(droppedFile);
-      setError('');
-    } else {
-      setError('Please upload a PDF, DOCX, or TXT file');
-    }
-  }, []);
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-  };
-
-  const isValidFile = (file) => {
-    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-    return validTypes.includes(file.type) ||
-      file.name.endsWith('.pdf') ||
-      file.name.endsWith('.docx') ||
-      file.name.endsWith('.txt');
-  };
-
-  // Upload CV with authentication
-  const uploadCV = async () => {
-    if (!file) return;
-
     if (!isAuthenticated) {
-      setError('Please login to upload your CV');
+      navigate('/login');
+    }
+  }, [isAuthenticated, navigate]);
+
+  // Check for existing CV data from CV screening page
+  useEffect(() => {
+    const storedCvData = sessionStorage.getItem('cvData');
+    const storedSessionId = sessionStorage.getItem('sessionId');
+    
+    if (storedCvData && storedSessionId) {
+      try {
+        const parsedCvData = JSON.parse(storedCvData);
+        setCvData(parsedCvData);
+        
+        // Clear session storage
+        sessionStorage.removeItem('cvData');
+        sessionStorage.removeItem('sessionId');
+        
+        // Automatically fetch matches
+        fetchJobMatches(parsedCvData.member_id);
+      } catch (err) {
+        console.error('Error parsing stored CV data:', err);
+      }
+    }
+  }, []);
+
+  const handleFileSelect = (e) => {
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      if (validTypes.includes(selectedFile.type)) {
+        setFile(selectedFile);
+        setError('');
+      } else {
+        setError('Please select a PDF or DOCX file');
+      }
+    }
+  };
+
+  const uploadAndAnalyze = async () => {
+    if (!file) {
+      setError('Please select a file first');
       return;
     }
 
     setUploading(true);
     setError('');
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('storageType', 'temporary');
-
     try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('storageType', 'temporary');
+
+      const token = localStorage.getItem('token');
+      
+      // Upload to Spring Boot backend
       const response = await fetch('/api/match/upload-cv', {
         method: 'POST',
         headers: {
-          ...getAuthHeaders()
+          'Authorization': `Bearer ${token}`
         },
-        body: formData,
-        credentials: 'include'
+        body: formData
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || data.details || 'Failed to upload CV');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload CV');
       }
 
-      // Handle successful response
-      if (data.success && data.data) {
-        setCvData(data.data);
-        await fetchJobMatches();
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        setCvData(result.data);
+        // Automatically fetch job matches
+        await fetchJobMatches(result.data.member_id);
       } else {
-        throw new Error('Invalid response format');
+        throw new Error(result.error || 'Invalid response from server');
       }
 
     } catch (err) {
@@ -109,32 +114,27 @@ const JobMatchingDashboard = () => {
     }
   };
 
-  // Fetch job matches with authentication
-  const fetchJobMatches = async () => {
-    if (!isAuthenticated) {
-      setError('Please login to view job matches');
-      return;
-    }
-
+  const fetchJobMatches = async (memberId) => {
     setLoading(true);
     setError('');
 
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`/api/match/jobs?mode=${matchMode}&limit=20`, {
         headers: {
-          ...getAuthHeaders(),
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        },
-        credentials: 'include'
+        }
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch job matches');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch job matches');
       }
 
+      const data = await response.json();
       setJobMatches(data.matches || []);
+      
     } catch (err) {
       console.error('Fetch error:', err);
       setError(err.message || 'Error fetching job matches');
@@ -143,228 +143,86 @@ const JobMatchingDashboard = () => {
     }
   };
 
-  // Clear CV data
+  const handleViewDetails = (match) => {
+    // Extract numeric ID from job_id (e.g., "123" from "123" or "job_123")
+    const jobId = match.job_id.replace(/\D/g, '') || match.job_id;
+    navigate(`/jobs/${jobId}`);
+  };
+
+  const getMatchPercentage = (score) => {
+    return Math.round(score * 100);
+  };
+
+  const getMatchColor = (score) => {
+    if (score >= 0.8) return '#22c55e';
+    if (score >= 0.6) return '#3b82f6';
+    if (score >= 0.4) return '#f59e0b';
+    return '#6b7280';
+  };
+
   const clearCV = async () => {
     try {
-      const response = await fetch('/api/match/clear-cv', {
+      const token = localStorage.getItem('token');
+      await fetch('/api/match/clear-cv', {
         method: 'DELETE',
         headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include'
+          'Authorization': `Bearer ${token}`
+        }
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to clear CV data');
-      }
-
+      
       setFile(null);
       setCvData(null);
       setJobMatches([]);
       setError('');
     } catch (err) {
-      setError('Error clearing CV data');
-    }
-  };
-
-  // Get match quality color
-  const getMatchQualityColor = (quality) => {
-    switch (quality) {
-      case 'EXCELLENT': return 'text-green-600 bg-green-100';
-      case 'GOOD': return 'text-blue-600 bg-blue-100';
-      case 'FAIR': return 'text-yellow-600 bg-yellow-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
-
-  // Safe percentage calculation
-  const getMatchPercentage = (score) => {
-    if (typeof score !== 'number' || isNaN(score)) {
-      return 50; // Default to 50% if score is invalid
-    }
-    return Math.round(score * 100);
-  };
-
-  // Login prompt component
-  const LoginPrompt = () => (
-    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-      <AlertCircle className="w-12 h-12 text-yellow-600 mx-auto mb-4" />
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">Authentication Required</h3>
-      <p className="text-gray-600 mb-4">Please login to use the AI-powered job matching feature</p>
-      <button
-        onClick={() => window.location.href = '/login'}
-        className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
-      >
-        Login Now
-      </button>
-    </div>
-  );
-
-  // Handle view details navigation
-  const handleViewDetails = (match) => {
-    // Try different ID fields that might exist
-    const jobId = match.job_id || match.id || match.jobId;
-
-    if (jobId && jobId !== 'undefined') {
-      navigate(`/jobs/${jobId}`);
-    } else {
-      alert('Job details not available. Job ID is missing.');
-    }
-  };
-
-  // Check CV data and automatically fetch matches if available
-  useEffect(() => {
-    const storedCvData = sessionStorage.getItem('cvData');
-    const storedSessionId = sessionStorage.getItem('sessionId');
-    
-    if (storedCvData && storedSessionId) {
-      const parsedCvData = JSON.parse(storedCvData);
-      setCvData(parsedCvData);
-      setSessionId(storedSessionId);
-      
-      // Clear session storage
-      sessionStorage.removeItem('cvData');
-      sessionStorage.removeItem('sessionId');
-      
-      // Automatically fetch matches
-      fetchMatches(parsedCvData.member_id, matchMode);
-    }
-  }, []);
-
-  // Handle file selection
-  const handleFileSelect = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile && 
-        (selectedFile.type === 'application/pdf' || 
-         selectedFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
-      setFile(selectedFile);
-      setError('');
-    } else {
-      setError('Please select a PDF or DOCX file');
-    }
-  };
-
-  // Upload and analyze CV
-const uploadAndAnalyze = async () => {
-  if (!file) {
-    setError('Please select a file first');
-    return;
-  }
-
-  setUploading(true);
-  setError('');
-
-  try {
-    const formData = new FormData();
-    formData.append('file', file, file.name);
-    formData.append('session_id', sessionId);
-
-    const response = await fetch('http://localhost:8000/upload_cv', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to upload CV');
-    }
-
-    const data = await response.json();
-    setCvData(data);
-    await fetchMatches(data.member_id, matchMode);
-
-    // Redirect to results page after successful upload and match
-    navigate('/job-matches/results');
-  } catch (err) {
-    setError(err.message || 'Error uploading CV');
-  } finally {
-    setUploading(false);
-  }
-};
-
-  // Fetch job matches
-  const fetchMatches = async (memberId, mode) => {
-    setLoading(true);
-    setError('');
-
-    try {
-      const response = await fetch('http://localhost:8000/match_jobs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          session_id: sessionId,
-          member_id: memberId || cvData?.member_id,
-          mode: mode,
-          top_k: 10
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch matches');
-      }
-
-      const data = await response.json();
-      const processedMatches = data.matches.map(match => ({
-        ...match,
-        score: typeof match.score === 'number' ? match.score : 0.5,
-        job_id: match.job_id || match.id || `job-${Math.random()}`
-      }));
-
-      setJobMatches(processedMatches);
-    } catch (err) {
-      setError(err.message || 'Failed to fetch job matches');
-    } finally {
-      setLoading(false);
+      console.error('Clear CV error:', err);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">AI-Powered Job Matching</h1>
+    <div className="job-matching-dashboard">
+      <div className="dashboard-header">
+        <h1>AI-Powered Job Matching</h1>
+        <p>Upload your CV to get personalized job recommendations</p>
+      </div>
 
-        {!cvData ? (
-          <div className="upload-section">
-            <div 
-              className="drop-zone"
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-            >
-              <svg className="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              <p>Drag and drop your CV here, or</p>
-              <label className="file-select-btn">
-                Browse Files
-                <input
-                  type="file"
-                  accept=".pdf,.docx"
-                  onChange={handleFileSelect}
-                  style={{ display: 'none' }}
-                />
-              </label>
-              {file && (
-                <div className="selected-file">
-                  <span>Selected: {file.name}</span>
-                  <span style={{ fontSize: '12px', color: '#666' }}> ({(file.size / 1024).toFixed(1)} KB)</span>
-                </div>
+      {error && (
+        <div className="error-banner">
+          <span>{error}</span>
+          <button onClick={() => setError('')}>×</button>
+        </div>
+      )}
+
+      {!cvData ? (
+        <div className="upload-section">
+          <div className="upload-card">
+            <Upload className="upload-icon" />
+            <h2>Upload Your CV</h2>
+            <p>Support for PDF and DOCX formats</p>
+
+            <input
+              type="file"
+              id="cv-file"
+              accept=".pdf,.docx"
+              onChange={handleFileSelect}
+              className="file-input"
+            />
+            
+            <label htmlFor="cv-file" className="file-label">
+              {file ? (
+                <span className="file-selected">
+                  <FileText size={20} />
+                  {file.name}
+                </span>
+              ) : (
+                <span>Choose File</span>
               )}
-            </div>
-
-            {error && (
-              <div className="error-message" style={{ whiteSpace: 'pre-wrap' }}>
-                {error}
-              </div>
-            )}
+            </label>
 
             <button 
               onClick={uploadAndAnalyze}
               disabled={!file || uploading}
-              className="analyze-btn"
+              className="upload-btn"
             >
               {uploading ? 'Uploading and Analyzing...' : 'Upload and Analyze CV'}
             </button>
@@ -373,78 +231,130 @@ const uploadAndAnalyze = async () => {
               🔒 Your CV is only stored temporarily during this session
             </div>
           </div>
-        ) : (
-          <div className="results-section">
-            <div className="cv-summary">
+        </div>
+      ) : (
+        <div className="results-section">
+          <div className="cv-summary">
+            <div className="summary-header">
               <h2>CV Analysis Complete</h2>
-              <div className="cv-details">
-                <div className="detail-item">
-                  <span className="label">Skills:</span>
-                  <span className="value">{cvData.skills?.join(', ') || 'Not specified'}</span>
-                </div>
-                <div className="detail-item">
-                  <span className="label">Experience:</span>
-                  <span className="value">{cvData.experience_years} years</span>
-                </div>
-                <div className="detail-item">
-                  <span className="label">Seniority:</span>
-                  <span className="value">{cvData.seniority_level}</span>
-                </div>
-                {cvData.title && (
-                  <div className="detail-item">
-                    <span className="label">Current Role:</span>
-                    <span className="value">{cvData.title}</span>
-                  </div>
-                )}
-              </div>
-
-              <button 
-                onClick={() => {
-                  setCvData(null);
-                  setJobMatches([]);
-                  setFile(null);
-                }}
-                className="upload-another-btn"
-              >
-                Upload Another CV
-              </button>
+              <CheckCircle className="success-icon" />
             </div>
-
-            <div className="matches-section">
-              <div className="matches-header">
-                <h2>Job Matches</h2>
-              </div>
-
-              {jobMatches.length > 0 ? (
-                <div className="matches-grid">
-                  {jobMatches.map((match) => (
-                    <div key={match.job_id} className="match-card">
-                      <div className="match-score">
-                        {getMatchPercentage(match.score)}%
-                      </div>
-                      <h3>{match.title || 'Untitled Position'}</h3>
-                      <p className="company">{match.company || 'Company Name'}</p>
-                      <p className="location">{match.location || 'Location not specified'} • {match.seniority_level || 'Level not specified'}</p>
-
-                      <button 
-                        onClick={() => handleViewDetails(match)}
-                        className="view-job-btn"
-                      >
-                        View Details
-                      </button>
-                    </div>
+            
+            <div className="cv-details">
+              <div className="detail-row">
+                <span className="label">Skills Identified:</span>
+                <div className="skills-tags">
+                  {cvData.skills?.slice(0, 10).map((skill, idx) => (
+                    <span key={idx} className="skill-tag">{skill}</span>
                   ))}
+                  {cvData.skills?.length > 10 && (
+                    <span className="skill-tag more">+{cvData.skills.length - 10} more</span>
+                  )}
                 </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <Briefcase className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>No job matches found. Try a different matching mode or upload a different CV.</p>
+              </div>
+              
+              <div className="detail-row">
+                <span className="label">Experience:</span>
+                <span className="value">{cvData.experience_years} years</span>
+              </div>
+              
+              <div className="detail-row">
+                <span className="label">Seniority:</span>
+                <span className="value">{cvData.seniority_level}</span>
+              </div>
+              
+              {cvData.title && (
+                <div className="detail-row">
+                  <span className="label">Current Role:</span>
+                  <span className="value">{cvData.title}</span>
                 </div>
               )}
             </div>
+
+            <div className="actions">
+              <button onClick={clearCV} className="secondary-btn">
+                Upload Another CV
+              </button>
+              
+              <select 
+                value={matchMode} 
+                onChange={(e) => {
+                  setMatchMode(e.target.value);
+                  if (cvData?.member_id) {
+                    fetchJobMatches(cvData.member_id);
+                  }
+                }}
+                className="mode-select"
+              >
+                <option value="graduate_friendly">Graduate Friendly</option>
+                <option value="flexible">Flexible Matching</option>
+                <option value="strict">Strict Matching</option>
+              </select>
+            </div>
           </div>
-        )}
-      </div>
+
+          <div className="matches-section">
+            <h2>Job Matches</h2>
+            
+            {loading ? (
+              <div className="loading-state">
+                <div className="spinner"></div>
+                <p>Finding the best job matches for you...</p>
+              </div>
+            ) : jobMatches.length > 0 ? (
+              <div className="matches-grid">
+                {jobMatches.map((match) => (
+                  <div key={match.job_id} className="match-card">
+                    <div 
+                      className="match-score"
+                      style={{ backgroundColor: getMatchColor(match.score) }}
+                    >
+                      {getMatchPercentage(match.score)}%
+                    </div>
+                    
+                    <h3>{match.title || 'Untitled Position'}</h3>
+                    <p className="company">{match.company || 'Company Name'}</p>
+                    <p className="location">
+                      📍 {match.location || 'Location not specified'}
+                    </p>
+                    
+                    <div className="match-details">
+                      <div className="detail">
+                        <span className="detail-label">Experience:</span>
+                        <span>{match.experience_required} years</span>
+                      </div>
+                      <div className="detail">
+                        <span className="detail-label">Level:</span>
+                        <span>{match.seniority_level}</span>
+                      </div>
+                    </div>
+                    
+                    {match.match_details && (
+                      <div className="skill-match-info">
+                        <span>
+                          {match.match_details.skill_match} of {match.match_details.total_required_skills} skills matched
+                        </span>
+                      </div>
+                    )}
+                    
+                    <button 
+                      onClick={() => handleViewDetails(match)}
+                      className="view-job-btn"
+                    >
+                      View Details
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="no-matches">
+                <Briefcase className="no-matches-icon" />
+                <p>No job matches found. Try adjusting the matching mode.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
