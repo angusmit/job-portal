@@ -8,7 +8,7 @@ import EditJob from './components/EditJob';
 import Header from './components/Header';
 import JobDetails from './components/JobDetails';
 import JobList from './components/JobList';
-import JobMatchingDashboard from './components/JobMatchingDashboard.js';
+import JobMatchingDashboard from './components/JobMatchingDashboard.jsx';
 import Login from './components/Login';
 import MyJobs from './components/MyJobs';
 import PostJob from './components/PostJob';

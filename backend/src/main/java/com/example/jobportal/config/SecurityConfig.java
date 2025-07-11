@@ -53,21 +53,25 @@ public class SecurityConfig {
             AuthenticationConfiguration authConfig) throws Exception {
         return authConfig.getAuthenticationManager();
     }
-    
+
     @Bean
     public AuthTokenFilter authenticationJwtTokenFilter() {
         return new AuthTokenFilter();
     }
-    
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .csrf(csrf -> csrf.disable())
-            .exceptionHandling(handling -> handling.authenticationEntryPoint(jwtAuthenticationEntryPoint))
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .cors()  // Just enable CORS without a lambda-style config block
+            .and()
+            .csrf().disable()
+            .exceptionHandling()
+                .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+            .and()
+            .sessionManagement()
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            .and()
             .authorizeHttpRequests(authz -> authz
-                // Allow ML service endpoints without authentication for testing
                 .requestMatchers("/api/ml/**").permitAll()
                 .requestMatchers("/api/cv/upload").hasAuthority("JOB_SEEKER")
                 .requestMatchers("/api/jobs/match").hasAuthority("JOB_SEEKER")
@@ -87,7 +91,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/jobs/my-jobs").hasAuthority("EMPLOYER")
                 .requestMatchers("/api/jobs/saved").hasAuthority("JOB_SEEKER")
                 .anyRequest().authenticated()
-            );        
+            );
+
         http.authenticationProvider(authenticationProvider());
         http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
 
@@ -97,19 +102,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        
-        // Fix: Don't mix allowedOrigins and allowedOriginPatterns when using credentials
-        // Use ONLY allowedOriginPatterns when credentials are true
-        configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:3000", "http://localhost:3001"));
-        
-        // Don't set allowedOrigins at all when using allowedOriginPatterns
-        // configuration.setAllowedOrigins(Arrays.asList()); // Remove this line
-        
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
-        configuration.setExposedHeaders(Arrays.asList("Authorization"));
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
