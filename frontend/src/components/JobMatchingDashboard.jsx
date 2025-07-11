@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Briefcase, Upload, FileText, CheckCircle } from 'lucide-react';
@@ -15,7 +15,6 @@ const JobMatchingDashboard = () => {
   const [error, setError] = useState('');
   const [matchMode, setMatchMode] = useState('graduate_friendly');
   const [sessionId] = useState(() => {
-    // Get or create session ID
     let id = sessionStorage.getItem('ml_session_id');
     if (!id) {
       id = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -24,14 +23,15 @@ const JobMatchingDashboard = () => {
     return id;
   });
 
-  // Redirect if not authenticated
+  // Abort controller ref for cancelling requests
+  const abortControllerRef = useRef(null);
+
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
     }
   }, [isAuthenticated, navigate]);
 
-  // Check for existing CV data from CV screening page
   useEffect(() => {
     const storedCvData = sessionStorage.getItem('cvData');
     const storedSessionId = sessionStorage.getItem('sessionId');
@@ -40,17 +40,22 @@ const JobMatchingDashboard = () => {
       try {
         const parsedCvData = JSON.parse(storedCvData);
         setCvData(parsedCvData);
-        
-        // Clear session storage
         sessionStorage.removeItem('cvData');
         sessionStorage.removeItem('sessionId');
-        
-        // Automatically fetch matches
-        fetchJobMatches(parsedCvData.member_id);
+        fetchJobMatches(parsedCvData.member_id, matchMode);
       } catch (err) {
         console.error('Error parsing stored CV data:', err);
       }
     }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, []);
 
   const handleFileSelect = (e) => {
@@ -82,7 +87,6 @@ const JobMatchingDashboard = () => {
 
       const token = localStorage.getItem('token');
       
-      // Upload to Spring Boot backend
       const response = await fetch('/api/match/upload-cv', {
         method: 'POST',
         headers: {
@@ -100,8 +104,7 @@ const JobMatchingDashboard = () => {
       
       if (result.success && result.data) {
         setCvData(result.data);
-        // Automatically fetch job matches
-        await fetchJobMatches(result.data.member_id);
+        await fetchJobMatches(result.data.member_id, matchMode);
       } else {
         throw new Error(result.error || 'Invalid response from server');
       }
@@ -114,17 +117,26 @@ const JobMatchingDashboard = () => {
     }
   };
 
-  const fetchJobMatches = async (memberId) => {
+  const fetchJobMatches = async (memberId, mode) => {
+    // Cancel any pending request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+    
     setLoading(true);
     setError('');
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/match/jobs?mode=${matchMode}&limit=20`, {
+      const response = await fetch(`/api/match/jobs?mode=${mode}&limit=20`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: abortControllerRef.current.signal
       });
 
       if (!response.ok) {
@@ -136,15 +148,25 @@ const JobMatchingDashboard = () => {
       setJobMatches(data.matches || []);
       
     } catch (err) {
-      console.error('Fetch error:', err);
-      setError(err.message || 'Error fetching job matches');
+      // Don't set error if request was aborted
+      if (err.name !== 'AbortError') {
+        console.error('Fetch error:', err);
+        setError(err.message || 'Error fetching job matches');
+      }
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleModeChange = (newMode) => {
+    setMatchMode(newMode);
+    if (cvData?.member_id) {
+      fetchJobMatches(cvData.member_id, newMode);
     }
   };
 
   const handleViewDetails = (match) => {
-    // Extract numeric ID from job_id (e.g., "123" from "123" or "job_123")
     const jobId = match.job_id.replace(/\D/g, '') || match.job_id;
     navigate(`/jobs/${jobId}`);
   };
@@ -161,6 +183,11 @@ const JobMatchingDashboard = () => {
   };
 
   const clearCV = async () => {
+    // Cancel any pending requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
     try {
       const token = localStorage.getItem('token');
       await fetch('/api/match/clear-cv', {
@@ -278,13 +305,9 @@ const JobMatchingDashboard = () => {
               
               <select 
                 value={matchMode} 
-                onChange={(e) => {
-                  setMatchMode(e.target.value);
-                  if (cvData?.member_id) {
-                    fetchJobMatches(cvData.member_id);
-                  }
-                }}
+                onChange={(e) => handleModeChange(e.target.value)}
                 className="mode-select"
+                disabled={loading}
               >
                 <option value="graduate_friendly">Graduate Friendly</option>
                 <option value="flexible">Flexible Matching</option>
